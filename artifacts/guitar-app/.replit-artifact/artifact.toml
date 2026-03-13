@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/"
+title = "Guitar Tab Learner"
+version = "1.0.0"
+id = "artifacts/guitar-app"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+localPort = 20770
+name = "expo"
+paths = ["/"]
+
+[services.development]
+run = "pnpm --filter @workspace/guitar-app run dev"
+
+[services.env]
+PORT = "20770"
+BASE_PATH = "/"
+
+[services.production]
+build = ["pnpm", "--filter", "@workspace/guitar-app", "run", "build"]
+run = ["pnpm", "--filter", "@workspace/guitar-app", "run", "serve"]
