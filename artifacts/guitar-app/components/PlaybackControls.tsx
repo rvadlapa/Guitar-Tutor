@@ -4,12 +4,13 @@ import React from "react";
 import {
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 import Colors from "@/constants/colors";
-import { useTabContext } from "@/context/TabContext";
+import { useTabContext, InstrumentType } from "@/context/TabContext";
 
 type Props = {
   totalChords: number;
@@ -23,7 +24,15 @@ export default function PlaybackControls({ totalChords }: Props) {
     isPlaying, play, pause, stop, nextChord, prevChord,
     currentChordIndex, audioEnabled, setAudioEnabled,
     voiceEnabled, setVoiceEnabled,
+    instrument, setInstrument,
   } = useTabContext();
+
+  const INSTRUMENTS: { id: InstrumentType; label: string; icon: string }[] = [
+    { id: "guitar",  label: "Guitar",  icon: "🎸" },
+    { id: "sitar",   label: "Sitar",   icon: "🪕" },
+    { id: "piano",   label: "Piano",   icon: "🎹" },
+    { id: "bansuri", label: "Bansuri", icon: "🪈" },
+  ];
 
   const handlePlay = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -59,6 +68,39 @@ export default function PlaybackControls({ totalChords }: Props) {
         },
       ]}
     >
+      {/* Instrument picker */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.instrRow}
+      >
+        {INSTRUMENTS.map((inst) => {
+          const active = instrument === inst.id;
+          return (
+            <Pressable
+              key={inst.id}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setInstrument(inst.id);
+              }}
+              style={({ pressed }) => [
+                styles.instrChip,
+                {
+                  backgroundColor: active ? colors.tint : "#2A2218",
+                  borderColor: active ? colors.tint : "#3A3025",
+                  opacity: pressed ? 0.75 : 1,
+                },
+              ]}
+            >
+              <Text style={styles.instrIcon}>{inst.icon}</Text>
+              <Text style={[styles.instrLabel, { color: active ? "#fff" : colors.textSecondary }]}>
+                {inst.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+
       {/* Progress indicator */}
       <Text style={[styles.progress, { color: colors.textSecondary }]}>
         {totalChords > 0
@@ -195,6 +237,27 @@ const styles = StyleSheet.create({
       },
       android: { elevation: 3 },
     }),
+  },
+  instrRow: {
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 2,
+  },
+  instrChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  instrIcon: {
+    fontSize: 14,
+  },
+  instrLabel: {
+    fontSize: 12,
+    fontWeight: "600",
   },
   progress: {
     fontSize: 13,
