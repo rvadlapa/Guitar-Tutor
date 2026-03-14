@@ -1,4 +1,5 @@
 import { GuitarNote, TabChord, TabSection, TabSong } from "@/context/TabContext";
+import { midiToGuitarPosition } from "@/utils/sargamParser";
 
 function generateId(): string {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -43,23 +44,8 @@ function midiToSargamLabel(midi: number): string {
   return OFFSET_TO_SARGAM[offset] ?? "?";
 }
 
-// ─── Guitar fretboard ─────────────────────────────────────────────────────────
-
-// Standard tuning open strings (MIDI): e B G D A E (string 0 → 5)
-const STRING_OPEN_MIDI = [64, 59, 55, 50, 45, 40];
-
-function midiToGuitarPosition(midi: number): { string: number; fret: number } | null {
-  let best: { string: number; fret: number; score: number } | null = null;
-  for (let si = 0; si < 6; si++) {
-    const fret = midi - STRING_OPEN_MIDI[si];
-    if (fret >= 0 && fret <= 15) {
-      // Prefer middle strings (2-3) and low frets
-      const score = fret * 1.5 + Math.abs(si - 2.5);
-      if (!best || score < best.score) best = { string: si, fret, score };
-    }
-  }
-  return best ? { string: best.string, fret: best.fret } : null;
-}
+// midiToGuitarPosition is imported from sargamParser — uses the same
+// G·B·e cross-string 3rd-position table as the sargam notation display.
 
 // ─── Octave-aware MIDI helper ─────────────────────────────────────────────────
 //
@@ -127,8 +113,10 @@ export function parseWesternNotation(rawText: string, title?: string): TabSong {
   let currentSectionName = "Main";
   let currentChords: TabChord[] = [];
 
-  // Anchor near Sa (Bb3 = MIDI 58) so the first note picks the right octave
-  let prevMidi = SA_MIDI;
+  // Anchor at Pa (F4 = MIDI 65) — the center of the G·B·e cross-string range.
+  // This ensures the first note snaps to the main octave (G·B·e strings)
+  // rather than the lower octave (D·A·E strings).
+  let prevMidi = 65;
 
   const flushSection = () => {
     if (currentChords.length > 0) {
@@ -188,7 +176,7 @@ export function parseWesternNotation(rawText: string, title?: string): TabSong {
 
   // Fallback: try to parse the whole blob if no structured sections found
   if (sections.length === 0) {
-    let anchor = SA_MIDI;
+    let anchor = 65; // F4/Pa — center of G·B·e range
     const chords: TabChord[] = [];
     const tokens = rawText.split(/\s+/).filter(Boolean);
 

@@ -76,8 +76,8 @@ function sargamNoteToMidi(note: ParsedSargamNote, saMidi: number): number {
   return saMidi + semiOffset + octaveOffset;
 }
 
-function midiToGuitarPosition(midi: number): { string: number; fret: number } | null {
-  // Use the cross-string lookup first for exact matches
+export function midiToGuitarPosition(midi: number): { string: number; fret: number } | null {
+  // Use the cross-string lookup first for exact matches (G·B·e 3rd position)
   if (CROSS_STRING_POSITIONS[midi]) return CROSS_STRING_POSITIONS[midi];
 
   // Fallback: generic lowest-fret algorithm
