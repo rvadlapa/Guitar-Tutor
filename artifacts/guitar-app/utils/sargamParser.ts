@@ -40,7 +40,7 @@ function semitoneKey(note: ParsedSargamNote): string {
 // ─── Guitar fretboard ─────────────────────────────────────────────────────────
 
 const STRING_MIDI_OPEN = [64, 59, 55, 50, 45, 40]; // E4 B3 G3 D3 A2 E2
-const DEFAULT_SA_MIDI = 45; // A2
+const DEFAULT_SA_MIDI = 48; // C3 — C scale
 
 function sargamNoteToMidi(note: ParsedSargamNote, saMidi: number): number {
   const semiOffset = SEMITONES[semitoneKey(note)] ?? 0;
