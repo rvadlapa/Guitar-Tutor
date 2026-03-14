@@ -169,12 +169,26 @@ function sargamNoteToTabChord(note: ParsedSargamNote, saMidi: number): TabChord 
 }
 
 function sargamLineToCords(line: string, saMidi: number): TabChord[] {
-  const notes = tokenizeSargam(line);
+  // Each whitespace-separated token = 1 beat.
+  // Multiple syllables inside one token (e.g. "SaReSa") are subdivisions of
+  // that beat: each sub-note gets duration = 1/N of a beat.
+  const words = line.split(/\s+/).filter((w) => w.length > 0);
   const chords: TabChord[] = [];
-  for (const note of notes) {
-    const chord = sargamNoteToTabChord(note, saMidi);
-    if (chord) chords.push(chord);
+
+  for (const word of words) {
+    const notes = tokenizeSargam(word);
+    if (notes.length === 0) continue;
+
+    const duration = 1 / notes.length; // fraction of 1 beat per sub-note
+    for (const note of notes) {
+      const chord = sargamNoteToTabChord(note, saMidi);
+      if (chord) {
+        chord.duration = duration;
+        chords.push(chord);
+      }
+    }
   }
+
   return chords;
 }
 

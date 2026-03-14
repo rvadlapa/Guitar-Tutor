@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import {
   Animated,
   Easing,
@@ -44,18 +44,32 @@ function NoteHighwayInner({ chords, currentIndex, isPlaying, bpm }: Props) {
   const scrollX = useRef(new Animated.Value(0)).current;
   const animRef = useRef<Animated.CompositeAnimation | null>(null);
 
+  // Cumulative pixel offsets: offsets[i] = x position of chord i in the track.
+  // Chords with duration < 1 are narrower (proportional to their beat fraction).
+  const offsets = useMemo(() => {
+    const arr: number[] = [];
+    let cum = 0;
+    for (const chord of chords) {
+      arr.push(cum);
+      cum += (chord.duration ?? 1) * CHORD_WIDTH;
+    }
+    return arr;
+  }, [chords]);
+
   useEffect(() => {
     animRef.current?.stop();
     const beatMs = (60 / Math.max(bpm, 1)) * 1000;
+    const currentChord = chords[currentIndex];
+    const chordDuration = currentChord?.duration ?? 1;
     const anim = Animated.timing(scrollX, {
-      toValue: currentIndex * CHORD_WIDTH,
-      duration: isPlaying ? beatMs : 220,
+      toValue: offsets[currentIndex] ?? currentIndex * CHORD_WIDTH,
+      duration: isPlaying ? beatMs * chordDuration : 220,
       easing: isPlaying ? Easing.linear : Easing.out(Easing.quad),
       useNativeDriver: true,
     });
     animRef.current = anim;
     anim.start();
-  }, [currentIndex, isPlaying, bpm]);
+  }, [currentIndex, isPlaying, bpm, offsets]);
 
   // Negate scrollX for translateX (native driver compatible)
   const translateX = scrollX.interpolate({
@@ -143,6 +157,8 @@ function NoteHighwayInner({ chords, currentIndex, isPlaying, bpm }: Props) {
             const ci = winStart + localIdx;
             const isActive = ci === currentIndex;
             const isPast = ci < currentIndex;
+            const noteW = (chord.duration ?? 1) * CHORD_WIDTH;
+            const xOffset = offsets[ci] ?? ci * CHORD_WIDTH;
 
             return chord.notes
               .filter((n) => n.fret !== "x")
@@ -155,8 +171,8 @@ function NoteHighwayInner({ chords, currentIndex, isPlaying, bpm }: Props) {
 
                 const color = NOTE_COLORS[si] ?? "#AAA";
                 const label = String(fretNum);
-
                 const bgAlpha = isPast ? "28" : isActive ? "FF" : "99";
+                const minW = Math.max(noteW - 6, 10);
 
                 return (
                   <View
@@ -164,11 +180,9 @@ function NoteHighwayInner({ chords, currentIndex, isPlaying, bpm }: Props) {
                     style={[
                       styles.note,
                       {
-                        left: ci * CHORD_WIDTH + 3,
-                        top:
-                          si * LANE_HEIGHT +
-                          (LANE_HEIGHT - NOTE_HEIGHT) / 2,
-                        width: CHORD_WIDTH - 6,
+                        left: xOffset + 3,
+                        top: si * LANE_HEIGHT + (LANE_HEIGHT - NOTE_HEIGHT) / 2,
+                        width: minW,
                         height: NOTE_HEIGHT,
                         backgroundColor: color + bgAlpha,
                         borderColor: isActive
@@ -188,10 +202,8 @@ function NoteHighwayInner({ chords, currentIndex, isPlaying, bpm }: Props) {
                       style={[
                         styles.noteLabel,
                         {
-                          color: isPast
-                            ? "rgba(255,255,255,0.2)"
-                            : "#FFF",
-                          fontSize: 13,
+                          color: isPast ? "rgba(255,255,255,0.2)" : "#FFF",
+                          fontSize: minW < 28 ? 10 : 13,
                         },
                       ]}
                       numberOfLines={1}
