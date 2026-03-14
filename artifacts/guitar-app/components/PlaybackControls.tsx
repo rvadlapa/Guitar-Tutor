@@ -28,10 +28,8 @@ export default function PlaybackControls({ totalChords }: Props) {
   } = useTabContext();
 
   const INSTRUMENTS: { id: InstrumentType; label: string; icon: string }[] = [
-    { id: "guitar",  label: "Guitar",  icon: "🎸" },
-    { id: "sitar",   label: "Sitar",   icon: "🪕" },
-    { id: "piano",   label: "Piano",   icon: "🎹" },
-    { id: "bansuri", label: "Bansuri", icon: "🪈" },
+    { id: "acoustic", label: "Acoustic", icon: "🎸" },
+    { id: "electric", label: "Electric", icon: "⚡" },
   ];
 
   const handlePlay = () => {
