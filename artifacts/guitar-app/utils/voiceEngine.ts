@@ -22,24 +22,24 @@ if (Platform.OS !== "web") {
   getSpeech();
 }
 
-// Full syllable pronunciations — clearer than single letters
+// Phonetic spellings that TTS engines say as words, not letter-by-letter
 const SYLLABLE_PRONUNCIATIONS: Record<string, string> = {
-  Sa: "Saa",
-  sa: "saa",
-  Re: "Ray",
-  re: "ray",
+  Sa: "Saah",
+  sa: "saah",
+  Re: "Reh",
+  re: "reh",
   Ri: "Ree",
   ri: "ree",
-  Ga: "Ga",
-  ga: "ga",
-  Ma: "Ma",
-  ma: "ma",
-  Pa: "Pa",
-  pa: "pa",
-  Dha: "Dha",
-  dha: "dha",
-  Da: "Da",
-  da: "da",
+  Ga: "Gaah",
+  ga: "gaah",
+  Ma: "Maah",
+  ma: "maah",
+  Pa: "Paah",
+  pa: "paah",
+  Dha: "Daah",
+  dha: "daah",
+  Da: "Daah",
+  da: "daah",
   Ni: "Nee",
   ni: "nee",
 };
