@@ -19,6 +19,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: "books.vertical", selected: "books.vertical.fill" }} />
         <Label>Library</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="reference">
+        <Icon sf={{ default: "list.bullet.rectangle", selected: "list.bullet.rectangle.fill" }} />
+        <Label>Reference</Label>
+      </NativeTabs.Trigger>
     </NativeTabs>
   );
 }
@@ -82,6 +86,18 @@ function ClassicTabLayout() {
               <SymbolView name="books.vertical" tintColor={color} size={24} />
             ) : (
               <Feather name="book-open" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="reference"
+        options={{
+          title: "Reference",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="list.bullet.rectangle" tintColor={color} size={24} />
+            ) : (
+              <Feather name="grid" size={22} color={color} />
             ),
         }}
       />
