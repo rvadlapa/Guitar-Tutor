@@ -41,31 +41,24 @@ function semitoneKey(note: ParsedSargamNote): string {
 
 const STRING_MIDI_OPEN = [64, 59, 55, 50, 45, 40]; // E4 B3 G3 D3 A2 E2
 
-// Bb Major Cross-String Fingering — 3rd position (image reference)
-// Sa=Bb  Re=C  Ga=D  Ma=Eb  Pa=F  Dha=G  Ni=A  Sa'=Bb
-// All notes on strings G(2), B(1), e(0) — hand anchored at fret 3
-//
-// We store positions for two consecutive octaves so lower/upper Sa etc. resolve
-// correctly. Key = MIDI number.
-const CROSS_STRING_POSITIONS: Record<number, { string: number; fret: number }> = {
-  // ── lower octave (Bb2…Bb3) on D / A / E strings ──
-  46: { string: 5, fret: 6  }, // Bb2 — E(low) fret 6
-  48: { string: 4, fret: 3  }, // C3  — A string fret 3
-  50: { string: 4, fret: 5  }, // D3  — A string fret 5
-  51: { string: 4, fret: 6  }, // Eb3 — A string fret 6
-  53: { string: 3, fret: 3  }, // F3  — D string fret 3
-  55: { string: 3, fret: 5  }, // G3  — D string fret 5
-  57: { string: 3, fret: 7  }, // A3  — D string fret 7
-  58: { string: 2, fret: 3  }, // Bb3 — G string fret 3  ← Sa (main)
-  // ── main octave (C4…Bb4) cross-string 3rd position ──
-  60: { string: 2, fret: 5  }, // C4  — G string fret 5  ← Re
-  62: { string: 1, fret: 3  }, // D4  — B string fret 3  ← Ga
-  63: { string: 1, fret: 4  }, // Eb4 — B string fret 4  ← Ma
-  65: { string: 1, fret: 6  }, // F4  — B string fret 6  ← Pa
-  67: { string: 0, fret: 3  }, // G4  — e string fret 3  ← Dha
-  69: { string: 0, fret: 5  }, // A4  — e string fret 5  ← Ni
-  70: { string: 0, fret: 6  }, // Bb4 — e string fret 6  ← Sa'
+// Bb Major Cross-String Fingering — 3rd position (G · B · e strings only)
+// Sa=Bb3  Re=C4  Ga=D4  Ma=Eb4  Pa=F4  Dha=G4  Ni=A4  Sa'=Bb4
+// All entries are on strings G(2), B(1), e(0). Octave is conveyed by the
+// visual style (dashed = lower, solid = main, glow = upper), NOT by string.
+// Key = MIDI pitch-class offset mapped to the main-octave MIDI number.
+const GBE_POSITIONS: Record<number, { string: number; fret: number }> = {
+  58: { string: 2, fret: 3 }, // Bb3/Sa   — G  fret 3
+  60: { string: 2, fret: 5 }, // C4 /Re   — G  fret 5
+  62: { string: 1, fret: 3 }, // D4 /Ga   — B  fret 3
+  63: { string: 1, fret: 4 }, // Eb4/Ma   — B  fret 4
+  65: { string: 1, fret: 6 }, // F4 /Pa   — B  fret 6
+  67: { string: 0, fret: 3 }, // G4 /Dha  — e  fret 3
+  69: { string: 0, fret: 5 }, // A4 /Ni   — e  fret 5
+  70: { string: 0, fret: 6 }, // Bb4/Sa'  — e  fret 6
 };
+
+// G·B·e open-string MIDI values (strings 0-2 only)
+const GBE_OPEN_MIDI = [64, 59, 55]; // e, B, G
 
 // Sa = Bb3 (MIDI 58) — Bb Major cross-string fingering
 const DEFAULT_SA_MIDI = 58;
@@ -76,16 +69,27 @@ function sargamNoteToMidi(note: ParsedSargamNote, saMidi: number): number {
   return saMidi + semiOffset + octaveOffset;
 }
 
-export function midiToGuitarPosition(midi: number): { string: number; fret: number } | null {
-  // Use the cross-string lookup first for exact matches (G·B·e 3rd position)
-  if (CROSS_STRING_POSITIONS[midi]) return CROSS_STRING_POSITIONS[midi];
+// SA_MIDI_MAIN = 58 (Bb3) is the lowest note in the main G·B·e octave.
+// SA_MIDI_HIGH = 70 (Bb4) is the highest.
+const SA_MIDI_MAIN = 58;
+const SA_MIDI_HIGH = 70;
 
-  // Fallback: generic lowest-fret algorithm
+export function midiToGuitarPosition(midi: number): { string: number; fret: number } | null {
+  // Always stay on G·B·e strings — shift note into the main-octave range (58–70)
+  // before the lookup. Octave context (lower/upper) is shown via visual style.
+  let m = midi;
+  while (m < SA_MIDI_MAIN) m += 12;
+  while (m > SA_MIDI_HIGH) m -= 12;
+
+  // Look up in the G·B·e cross-string position table
+  if (GBE_POSITIONS[m]) return GBE_POSITIONS[m];
+
+  // Fallback for chromatic/non-scale tones: G·B·e strings only
   let best: { string: number; fret: number; score: number } | null = null;
-  for (let si = 0; si < 6; si++) {
-    const fret = midi - STRING_MIDI_OPEN[si];
+  for (let si = 0; si < 3; si++) {
+    const fret = m - GBE_OPEN_MIDI[si];
     if (fret >= 0 && fret <= 15) {
-      const score = fret * 2 + Math.abs(si - 3.5);
+      const score = fret;
       if (!best || score < best.score) best = { string: si, fret, score };
     }
   }
