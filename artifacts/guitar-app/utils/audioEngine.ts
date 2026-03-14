@@ -12,13 +12,52 @@ function getFretFrequency(stringIndex: number, fret: number | "x" | "0"): number
   return OPEN_STRING_FREQS[stringIndex] * Math.pow(2, fretNum / 12);
 }
 
-// ─── Web Audio: Additive synthesis with inharmonic overtones ──────────────────
+// ─── Karplus-Strong plucked string synthesis ─────────────────────────────────
 //
-// Real acoustic guitar strings produce inharmonic overtones — higher partials
-// are slightly sharper than integer multiples (inharmonicity coefficient B).
-// Each partial also decays at a different rate: higher = faster decay.
-// This "bright attack → warm sustain" curve is the defining character of
-// acoustic guitar sound.
+// Seed a short delay line (length = sample_rate / frequency) with filtered
+// white noise, then iterate: output the front sample, replace it with the
+// average of the two front samples times a decay constant.
+// This one feedback loop naturally produces: sharp attack (from the noise),
+// pitch-accurate sustain (from the delay period), and exponential decay
+// (from the averaging filter acting as a low-pass, losing energy each cycle).
+// The result is unmistakably "plucked string" and nothing like a piano.
+
+function ksGenerate(
+  sampleRate: number,
+  frequency: number,
+  stringIndex: number,
+  durationSec: number,
+): Float32Array {
+  const numSamples = Math.floor(sampleRate * durationSec);
+  const period = Math.max(2, Math.round(sampleRate / frequency));
+
+  // Seed the delay line with white noise.
+  const delayLine = new Float32Array(period);
+  for (let i = 0; i < period; i++) delayLine[i] = Math.random() * 2 - 1;
+
+  // Lowpass-filter the seed noise: higher strings → brighter, lower → warmer.
+  // warmth = fraction of one-pole IIR applied to the initial burst.
+  const warmth = 0.12 + (5 - stringIndex) * 0.08; // high-e→0.12 … low-E→0.52
+  for (let i = 1; i < period; i++) {
+    delayLine[i] = delayLine[i] * (1 - warmth) + delayLine[i - 1] * warmth;
+  }
+
+  // Per-string decay constant: lower/thicker strings ring longer.
+  // Empirically tuned: high-e ≈ 0.994, low-E ≈ 0.9985.
+  const decay = 0.9940 + stringIndex * 0.00085;
+
+  const out = new Float32Array(numSamples);
+  let ptr = 0;
+  for (let i = 0; i < numSamples; i++) {
+    const nextPtr = (ptr + 1) % period;
+    out[i] = delayLine[ptr];
+    delayLine[ptr] = 0.5 * (delayLine[ptr] + delayLine[nextPtr]) * decay;
+    ptr = nextPtr;
+  }
+  return out;
+}
+
+// ─── Web Audio ────────────────────────────────────────────────────────────────
 
 let webCtx: AudioContext | null = null;
 
@@ -32,155 +71,100 @@ function getCtx(): AudioContext | null {
   return webCtx;
 }
 
-// Shared reverb convolver (guitar body resonance)
+// Shared guitar-body reverb — synthetic impulse response for a small wooden box.
 let reverbBuffer: AudioBuffer | null = null;
+let reverbNode: ConvolverNode | null = null;
+let reverbGain: GainNode | null = null;
+let masterOut: GainNode | null = null;
 
 function buildReverbBuffer(ctx: AudioContext): AudioBuffer {
   if (reverbBuffer) return reverbBuffer;
-
-  // Synthetic impulse response: exponentially decaying noise simulates a
-  // small wooden box (guitar body). Duration ~0.9 s, slightly brighter
-  // early reflections that warm up into a diffuse tail.
   const sr = ctx.sampleRate;
-  const len = Math.floor(sr * 0.9);
+  const len = Math.floor(sr * 0.85);
   const buf = ctx.createBuffer(2, len, sr);
   for (let ch = 0; ch < 2; ch++) {
     const d = buf.getChannelData(ch);
     for (let i = 0; i < len; i++) {
       const t = i / sr;
-      // Early reflections (dense, bright): strong for first 30 ms
-      const early = i < sr * 0.03 ? Math.exp(-t * 80) * 1.2 : 0;
-      // Diffuse tail (warm): exponential decay over the rest
-      const tail = Math.exp(-t * 7.5);
-      d[i] = (Math.random() * 2 - 1) * (early + tail * 0.35);
+      const early = i < sr * 0.025 ? Math.exp(-t * 90) * 1.1 : 0;
+      const tail  = Math.exp(-t * 8.0);
+      d[i] = (Math.random() * 2 - 1) * (early + tail * 0.30);
     }
   }
   reverbBuffer = buf;
   return buf;
 }
 
-let reverbNode: ConvolverNode | null = null;
-let reverbGain: GainNode | null = null;
-let masterEq: BiquadFilterNode | null = null;
+function getSharedChain(ctx: AudioContext): AudioNode {
+  if (masterOut) return masterOut;
 
-function getSharedChain(ctx: AudioContext): {
-  input: AudioNode;
-} {
-  if (reverbNode && reverbGain && masterEq) return { input: masterEq };
+  masterOut = ctx.createGain();
+  masterOut.gain.value = 1.0;
 
-  // Build once, share across all notes
+  // Body warmth: gentle boost at 180 Hz (guitar body resonance)
+  const warmEq = ctx.createBiquadFilter();
+  warmEq.type = "peaking";
+  warmEq.frequency.value = 180;
+  warmEq.gain.value = 4.0;
+  warmEq.Q.value = 1.0;
+
+  // High cut at 5 kHz — removes the "digital" harshness
+  const highCut = ctx.createBiquadFilter();
+  highCut.type = "lowpass";
+  highCut.frequency.value = 5000;
+
+  // Reverb wet path (22% wet — guitar body ambience, not hall reverb)
   reverbNode = ctx.createConvolver();
   reverbNode.buffer = buildReverbBuffer(ctx);
   reverbNode.normalize = true;
-
   reverbGain = ctx.createGain();
-  reverbGain.gain.value = 0.28; // 28% wet
+  reverbGain.gain.value = 0.22;
 
-  // Warmth EQ: boost body at 220 Hz, cut harshness above 4 kHz
-  masterEq = ctx.createBiquadFilter();
-  masterEq.type = "peaking";
-  masterEq.frequency.value = 220;
-  masterEq.gain.value = 5;
-  masterEq.Q.value = 1.2;
-
-  const highCut = ctx.createBiquadFilter();
-  highCut.type = "lowpass";
-  highCut.frequency.value = 5500;
-
-  masterEq.connect(highCut);
-  highCut.connect(ctx.destination);   // dry path
-  highCut.connect(reverbGain);        // send to reverb
+  masterOut.connect(warmEq);
+  warmEq.connect(highCut);
+  highCut.connect(ctx.destination);     // dry path
+  highCut.connect(reverbGain);          // send to reverb
   reverbGain.connect(reverbNode);
-  reverbNode.connect(ctx.destination);
+  reverbNode.connect(ctx.destination);  // wet path
 
-  return { input: masterEq };
+  return masterOut;
 }
 
-function playAcousticGuitarNote(ctx: AudioContext, frequency: number, stringIndex: number, delaySeconds: number): void {
+// KS buffer cache: avoids re-generating the same note every playback.
+const ksWebCache = new Map<string, AudioBuffer>();
+
+function getKSBuffer(ctx: AudioContext, frequency: number, stringIndex: number): AudioBuffer {
+  const key = `${stringIndex}:${frequency.toFixed(2)}`;
+  const cached = ksWebCache.get(key);
+  if (cached) return cached;
+
+  const pcm = ksGenerate(ctx.sampleRate, frequency, stringIndex, 3.0);
+  const buf = ctx.createBuffer(1, pcm.length, ctx.sampleRate);
+  buf.copyToChannel(pcm, 0);
+  ksWebCache.set(key, buf);
+  return buf;
+}
+
+function playWebNote(
+  ctx: AudioContext,
+  frequency: number,
+  stringIndex: number,
+  delaySeconds: number,
+): void {
   const t0 = ctx.currentTime + delaySeconds;
-  const { input } = getSharedChain(ctx);
+  const chain = getSharedChain(ctx);
 
-  // Inharmonicity: real guitar strings B ≈ 0.0001–0.0004
-  // Higher strings are more inharmonic than lower ones
-  const B = [0.00030, 0.00025, 0.00020, 0.00015, 0.00010, 0.00008][stringIndex] ?? 0.0002;
+  const buf = getKSBuffer(ctx, frequency, stringIndex);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
 
-  // Harmonic series — amplitudes and decay-rate multipliers tuned to match
-  // recordings of acoustic guitar. Decay rate grows quadratically with partial
-  // number, which matches measured string physics.
-  const partials = [
-    { n: 1, amp: 1.000, decayRate: 2.2  },
-    { n: 2, amp: 0.520, decayRate: 3.8  },
-    { n: 3, amp: 0.260, decayRate: 6.2  },
-    { n: 4, amp: 0.140, decayRate: 9.5  },
-    { n: 5, amp: 0.070, decayRate: 14.0 },
-    { n: 6, amp: 0.036, decayRate: 19.5 },
-    { n: 7, amp: 0.018, decayRate: 26.0 },
-    { n: 8, amp: 0.009, decayRate: 34.0 },
-  ];
+  const gain = ctx.createGain();
+  // Lower strings slightly louder in a mix (compensates for less high-frequency energy)
+  gain.gain.value = 0.52 + stringIndex * 0.04;
 
-  // String-length scaling: longer strings ring longer (lower strings)
-  const ringScale = 1.0 + (5 - stringIndex) * 0.18; // 0→1.0, 5→1.9
-
-  // Overall amplitude: higher strings are louder (scaled by string index)
-  const masterAmp = 0.38 / (1 + partials.length * 0.05);
-
-  const noteGain = ctx.createGain();
-  noteGain.gain.value = masterAmp;
-  noteGain.connect(input);
-
-  partials.forEach(({ n, amp, decayRate }) => {
-    // Inharmonic frequency: f_n = n * f0 * sqrt(1 + B*n^2)
-    const freq_n = frequency * n * Math.sqrt(1 + B * n * n);
-    if (freq_n > ctx.sampleRate / 2) return; // above Nyquist, skip
-
-    const osc = ctx.createOscillator();
-    osc.type = "sine";
-    osc.frequency.value = freq_n;
-
-    // Tiny random detune per partial — avoids "digital" purity
-    osc.detune.value = (Math.random() - 0.5) * 3;
-
-    const envGain = ctx.createGain();
-    const totalDecay = decayRate / ringScale;
-    const ringTime = Math.max(0.3, 4.5 / totalDecay);
-
-    // Near-instant attack (0.8 ms), then exponential decay
-    envGain.gain.setValueAtTime(0.0001, t0);
-    envGain.gain.linearRampToValueAtTime(amp, t0 + 0.0008);
-    envGain.gain.exponentialRampToValueAtTime(0.0001, t0 + ringTime);
-
-    osc.connect(envGain);
-    envGain.connect(noteGain);
-    osc.start(t0);
-    osc.stop(t0 + ringTime + 0.05);
-  });
-
-  // ── Pick attack transient ─────────────────────────────────────────────────
-  // Short filtered noise burst replicates the "click" of finger/pick on string
-  const noiseLen = Math.floor(ctx.sampleRate * 0.04);
-  const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
-  const nd = noiseBuf.getChannelData(0);
-  for (let i = 0; i < noiseLen; i++) {
-    nd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.006));
-  }
-
-  const noiseSrc = ctx.createBufferSource();
-  noiseSrc.buffer = noiseBuf;
-
-  // Band-pass the noise around the 3rd harmonic for a woody "tick"
-  const nbp = ctx.createBiquadFilter();
-  nbp.type = "bandpass";
-  nbp.frequency.value = Math.min(frequency * 2.8, 6000);
-  nbp.Q.value = 0.8;
-
-  const nGain = ctx.createGain();
-  nGain.gain.setValueAtTime(0.22, t0);
-  nGain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.035);
-
-  noiseSrc.connect(nbp);
-  nbp.connect(nGain);
-  nGain.connect(input);
-  noiseSrc.start(t0);
+  src.connect(gain);
+  gain.connect(chain);
+  src.start(t0);
 }
 
 export function playWebChord(notes: GuitarNote[]): void {
@@ -189,14 +173,28 @@ export function playWebChord(notes: GuitarNote[]): void {
   const playable = notes.filter((n) => n.fret !== "x");
   playable.forEach((note, i) => {
     const freq = getFretFrequency(note.string, note.fret);
-    if (freq > 0) playAcousticGuitarNote(ctx, freq, note.string, i * 0.014);
+    if (freq > 0) playWebNote(ctx, freq, note.string, i * 0.014);
   });
 }
 
 export function preloadWebSamples(): void {
   if (Platform.OS !== "web") return;
   const ctx = getCtx();
-  if (ctx) buildReverbBuffer(ctx); // pre-build the reverb IR on load
+  if (!ctx) return;
+  buildReverbBuffer(ctx);
+  // Pre-generate KS buffers for the common cross-string position notes
+  const preload: [number, number][] = [
+    [2, 3], [2, 5], [2, 7], [2, 8], [2, 10],  // G string
+    [1, 3], [1, 4], [1, 6], [1, 8], [1, 10],  // B string
+    [0, 3], [0, 5], [0, 6], [0, 8], [0, 10],  // e string
+    [3, 3], [3, 5], [3, 7], [3, 8],            // D string
+    [4, 1], [4, 3], [4, 5], [4, 6],            // A string
+    [5, 6],                                     // low E string
+  ];
+  preload.forEach(([si, fret]) => {
+    const freq = getFretFrequency(si, fret);
+    if (freq > 0) getKSBuffer(ctx, freq, si);
+  });
 }
 
 // ─── Native (iOS / Android) via expo-av ──────────────────────────────────────
@@ -215,53 +213,12 @@ async function ensureAudioSession(): Promise<void> {
   } catch {}
 }
 
-function generateAcousticGuitarWav(frequency: number, stringIndex: number): string {
-  const sampleRate = 22050;
-  const duration = 2.5;
-  const numSamples = Math.floor(sampleRate * duration);
-
-  const B = [0.00030, 0.00025, 0.00020, 0.00015, 0.00010, 0.00008][stringIndex] ?? 0.0002;
-  const ringScale = 1.0 + (5 - stringIndex) * 0.18;
-
-  const partials = [
-    { n: 1, amp: 1.000, decayRate: 2.2  },
-    { n: 2, amp: 0.520, decayRate: 3.8  },
-    { n: 3, amp: 0.260, decayRate: 6.2  },
-    { n: 4, amp: 0.140, decayRate: 9.5  },
-    { n: 5, amp: 0.070, decayRate: 14.0 },
-    { n: 6, amp: 0.036, decayRate: 19.5 },
-  ];
-
-  const samples = new Float32Array(numSamples).fill(0);
-
-  // Add pick noise burst (first 40 ms)
-  const noiseLen = Math.floor(sampleRate * 0.04);
-  for (let i = 0; i < noiseLen; i++) {
-    const env = Math.exp(-i / (sampleRate * 0.006));
-    samples[i] += (Math.random() * 2 - 1) * env * 0.18;
-  }
-
-  // Add each partial
-  partials.forEach(({ n, amp, decayRate }) => {
-    const freq_n = frequency * n * Math.sqrt(1 + B * n * n);
-    if (freq_n >= sampleRate / 2) return;
-    const omega = (2 * Math.PI * freq_n) / sampleRate;
-    const totalDecay = decayRate / ringScale;
-    const masterAmp = amp * 0.32;
-    for (let i = 0; i < numSamples; i++) {
-      const t = i / sampleRate;
-      const env = Math.exp(-t * totalDecay);
-      if (env < 0.001) break;
-      samples[i] += Math.sin(omega * i) * env * masterAmp;
-    }
-  });
-
-  // Normalise
+function ksToWav(pcm: Float32Array, sampleRate: number): string {
   let peak = 0;
-  for (let i = 0; i < numSamples; i++) peak = Math.max(peak, Math.abs(samples[i]));
+  for (let i = 0; i < pcm.length; i++) peak = Math.max(peak, Math.abs(pcm[i]));
   const norm = peak > 0 ? 0.85 / peak : 1;
 
-  // Pack to 16-bit WAV
+  const numSamples = pcm.length;
   const fileSize = 44 + numSamples * 2;
   const buf = new ArrayBuffer(fileSize);
   const v = new DataView(buf);
@@ -272,9 +229,8 @@ function generateAcousticGuitarWav(frequency: number, stringIndex: number): stri
   v.setUint32(28, sampleRate * 2, true); v.setUint16(32, 2, true);
   v.setUint16(34, 16, true); ws(36, "data"); v.setUint32(40, numSamples * 2, true);
   for (let i = 0; i < numSamples; i++) {
-    v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, samples[i] * norm)) * 32767, true);
+    v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i] * norm)) * 32767, true);
   }
-
   let bin = "";
   const bytes = new Uint8Array(buf);
   for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
@@ -287,12 +243,13 @@ async function playNativeNote(stringIndex: number, fret: number | "x" | "0"): Pr
   if (fret === "x") return;
   const freq = getFretFrequency(stringIndex, fret);
   if (freq <= 0) return;
-  const cacheKey = `ag_${stringIndex}_${fret}`;
+  const cacheKey = `ks_${stringIndex}_${fret}`;
   try {
     await ensureAudioSession();
     let sound = nativeCache.get(cacheKey);
     if (!sound) {
-      const wav = generateAcousticGuitarWav(freq, stringIndex);
+      const pcm = ksGenerate(22050, freq, stringIndex, 2.5);
+      const wav = ksToWav(pcm, 22050);
       const { FileSystem } = await import("expo-file-system");
       const uri = `${FileSystem.cacheDirectory}${cacheKey}.wav`;
       await FileSystem.writeAsStringAsync(uri, wav, { encoding: "base64" as any });
@@ -329,9 +286,10 @@ export async function playChord(notes: GuitarNote[]): Promise<void> {
 export function disposeAudio(): void {
   nativeCache.forEach((s) => s.unloadAsync().catch(() => {}));
   nativeCache.clear();
+  ksWebCache.clear();
   reverbBuffer = null;
-  reverbNode = null;
-  reverbGain = null;
-  masterEq = null;
-  webCtx = null;
+  reverbNode   = null;
+  reverbGain   = null;
+  masterOut    = null;
+  webCtx       = null;
 }
