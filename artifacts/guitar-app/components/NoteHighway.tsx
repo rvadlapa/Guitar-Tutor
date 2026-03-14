@@ -154,7 +154,10 @@ function NoteHighwayInner({ chords, currentIndex, isPlaying, bpm }: Props) {
                     : parseInt(note.fret as string, 10) || 0;
 
                 const color = NOTE_COLORS[si] ?? "#AAA";
-                const label = String(si + 1);
+                // Show note name (C, D#, A#…) for Western/sargam; fret number for tabs
+                const label = chord.label && chord.label.length <= 3
+                  ? chord.label
+                  : String(fretNum);
 
                 const bgAlpha = isPast ? "28" : isActive ? "FF" : "99";
 
@@ -191,10 +194,11 @@ function NoteHighwayInner({ chords, currentIndex, isPlaying, bpm }: Props) {
                           color: isPast
                             ? "rgba(255,255,255,0.2)"
                             : "#FFF",
-                          fontSize: 12,
+                          fontSize: label.length > 2 ? 11 : 13,
                         },
                       ]}
                       numberOfLines={1}
+                      adjustsFontSizeToFit
                     >
                       {label}
                     </Text>
