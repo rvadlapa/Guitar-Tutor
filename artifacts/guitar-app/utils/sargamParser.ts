@@ -372,10 +372,28 @@ export function parseSargamText(rawText: string, title?: string): TabSong {
 // ─── Detection ────────────────────────────────────────────────────────────────
 
 export function isSargamText(text: string): boolean {
+  // Reject guitar tab lines (e.g. "e|---0---")
   if (/^[eEBGDAb]\s*[|:>]/m.test(text)) return false;
-  const concatenated = /((?:Sa|sa|Re|re|Ri|ri|Ga|ga|Ma|ma|Pa|pa|Dha|dha|Da|da|Ni|ni){2,})/g;
-  const matches = text.match(concatenated);
-  return !!matches && matches.length >= 3;
+
+  // Strategy 1: concatenated syllables (compact notation — SaReGaMa)
+  const concatRe = /((?:Sa|sa|Re|re|Ri|ri|Ga|ga|Ma|ma|Pa|pa|Dha|dha|Da|da|Ni|ni){2,})/g;
+  const concatMatches = text.match(concatRe);
+  if (concatMatches && concatMatches.length >= 2) return true;
+
+  // Strategy 2: space-separated sargam (Sa Re Ga Ma Pa …)
+  // At least one non-empty line must have >50% sargam words, and
+  // the overall sargam density across all non-empty lines must be >40%.
+  const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+  if (lines.length === 0) return false;
+  let sargamLineCount = 0;
+  let totalDensity = 0;
+  for (const line of lines) {
+    const d = estimateSargamDensity(line);
+    totalDensity += d;
+    if (d > 0.5) sargamLineCount++;
+  }
+  const avgDensity = totalDensity / lines.length;
+  return sargamLineCount >= 1 && avgDensity > 0.4;
 }
 
 export function getSargamRootName(saMidi: number): string {
