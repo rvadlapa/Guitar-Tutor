@@ -40,7 +40,35 @@ function semitoneKey(note: ParsedSargamNote): string {
 // ─── Guitar fretboard ─────────────────────────────────────────────────────────
 
 const STRING_MIDI_OPEN = [64, 59, 55, 50, 45, 40]; // E4 B3 G3 D3 A2 E2
-const DEFAULT_SA_MIDI = 48; // C3 — C scale
+
+// Bb Major Cross-String Fingering — 3rd position (image reference)
+// Sa=Bb  Re=C  Ga=D  Ma=Eb  Pa=F  Dha=G  Ni=A  Sa'=Bb
+// All notes on strings G(2), B(1), e(0) — hand anchored at fret 3
+//
+// We store positions for two consecutive octaves so lower/upper Sa etc. resolve
+// correctly. Key = MIDI number.
+const CROSS_STRING_POSITIONS: Record<number, { string: number; fret: number }> = {
+  // ── lower octave (Bb2…Bb3) on D / A / E strings ──
+  46: { string: 5, fret: 6  }, // Bb2 — E(low) fret 6
+  48: { string: 4, fret: 3  }, // C3  — A string fret 3
+  50: { string: 4, fret: 5  }, // D3  — A string fret 5
+  51: { string: 4, fret: 6  }, // Eb3 — A string fret 6
+  53: { string: 3, fret: 3  }, // F3  — D string fret 3
+  55: { string: 3, fret: 5  }, // G3  — D string fret 5
+  57: { string: 3, fret: 7  }, // A3  — D string fret 7
+  58: { string: 2, fret: 3  }, // Bb3 — G string fret 3  ← Sa (main)
+  // ── main octave (C4…Bb4) cross-string 3rd position ──
+  60: { string: 2, fret: 5  }, // C4  — G string fret 5  ← Re
+  62: { string: 1, fret: 3  }, // D4  — B string fret 3  ← Ga
+  63: { string: 1, fret: 4  }, // Eb4 — B string fret 4  ← Ma
+  65: { string: 1, fret: 6  }, // F4  — B string fret 6  ← Pa
+  67: { string: 0, fret: 3  }, // G4  — e string fret 3  ← Dha
+  69: { string: 0, fret: 5  }, // A4  — e string fret 5  ← Ni
+  70: { string: 0, fret: 6  }, // Bb4 — e string fret 6  ← Sa'
+};
+
+// Sa = Bb3 (MIDI 58) — Bb Major cross-string fingering
+const DEFAULT_SA_MIDI = 58;
 
 function sargamNoteToMidi(note: ParsedSargamNote, saMidi: number): number {
   const semiOffset = SEMITONES[semitoneKey(note)] ?? 0;
@@ -49,6 +77,10 @@ function sargamNoteToMidi(note: ParsedSargamNote, saMidi: number): number {
 }
 
 function midiToGuitarPosition(midi: number): { string: number; fret: number } | null {
+  // Use the cross-string lookup first for exact matches
+  if (CROSS_STRING_POSITIONS[midi]) return CROSS_STRING_POSITIONS[midi];
+
+  // Fallback: generic lowest-fret algorithm
   let best: { string: number; fret: number; score: number } | null = null;
   for (let si = 0; si < 6; si++) {
     const fret = midi - STRING_MIDI_OPEN[si];
