@@ -72,15 +72,15 @@ export function TabProvider({ children }: { children: React.ReactNode }) {
   const [currentChordIndex, setCurrentChordIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [bpm, setBpmState] = useState(80);
-  const [audioEnabled, setAudioEnabledState] = useState(true);
-  const [voiceEnabled, setVoiceEnabledState] = useState(false);
+  const [audioEnabled, setAudioEnabledState] = useState(false);
+  const [voiceEnabled, setVoiceEnabledState] = useState(true);
 
   const playIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const currentSongRef = useRef<TabSong | null>(null);
   const currentChordIndexRef = useRef(0);
   const bpmRef = useRef(80);
-  const audioEnabledRef = useRef(true);
-  const voiceEnabledRef = useRef(false);
+  const audioEnabledRef = useRef(false);
+  const voiceEnabledRef = useRef(true);
 
   useEffect(() => { currentSongRef.current = currentSong; }, [currentSong]);
   useEffect(() => { currentChordIndexRef.current = currentChordIndex; }, [currentChordIndex]);

@@ -5,7 +5,7 @@ import { Platform } from "react-native";
 // Web: uses the built-in Web Speech API (no install needed)
 // Native: uses expo-speech
 
-let voiceEnabled = false;
+let voiceEnabled = true;
 
 // Lazy-import expo-speech only on native so web bundle stays clean
 let Speech: typeof import("expo-speech") | null = null;
