@@ -273,10 +273,11 @@ export function preloadWebSamples(): void {
   if (Platform.OS !== "web") return;
   const ctx = getCtx();
   if (!ctx) return;
+  // C major cross-string positions: G(5,7) B(5,6) e(3,5,7,8)
   const positions: [number, number][] = [
-    [2, 3], [2, 5], [2, 7], [2, 8],
-    [1, 3], [1, 4], [1, 6],
-    [0, 3], [0, 5], [0, 6],
+    [2, 5], [2, 7],
+    [1, 5], [1, 6],
+    [0, 3], [0, 5], [0, 7], [0, 8],
   ];
   positions.forEach(([si, fret]) => {
     const freq = getFretFrequency(si, fret);

@@ -19,10 +19,10 @@ const NOTE_TO_SEMITONE: Record<string, number> = {
 
 // ─── Semitone offset from Sa → sargam label ───────────────────────────────────
 //
-// Sa = Bb3 = MIDI 58 (DEFAULT_SA_MIDI matches sargamParser.ts)
+// Sa = C4 = MIDI 60 (DEFAULT_SA_MIDI matches sargamParser.ts)
 // Offset = (midi - SA_MIDI + 120) % 12
 
-const SA_MIDI = 58; // Bb3
+const SA_MIDI = 60; // C4
 
 const OFFSET_TO_SARGAM: Record<number, string> = {
   0:  "Sa",
@@ -113,10 +113,10 @@ export function parseWesternNotation(rawText: string, title?: string): TabSong {
   let currentSectionName = "Main";
   let currentChords: TabChord[] = [];
 
-  // Anchor at Pa (F4 = MIDI 65) — the center of the G·B·e cross-string range.
+  // Anchor at Pa (G4 = MIDI 67) — center of the C major G·B·e range (60–72).
   // This ensures the first note snaps to the main octave (G·B·e strings)
   // rather than the lower octave (D·A·E strings).
-  let prevMidi = 65;
+  let prevMidi = 67; // Pa/G4 — center of C major G·B·e range (60–72)
 
   const flushSection = () => {
     if (currentChords.length > 0) {
@@ -187,7 +187,7 @@ export function parseWesternNotation(rawText: string, title?: string): TabSong {
 
   // Fallback: try to parse the whole blob if no structured sections found
   if (sections.length === 0) {
-    let anchor = 65; // F4/Pa — center of G·B·e range
+    let anchor = 67; // G4/Pa — center of C major G·B·e range (60–72)
     const chords: TabChord[] = [];
     const tokens = rawText.split(/\s+/).filter(Boolean);
 

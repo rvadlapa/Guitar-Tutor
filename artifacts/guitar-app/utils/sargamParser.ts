@@ -41,27 +41,27 @@ function semitoneKey(note: ParsedSargamNote): string {
 
 const STRING_MIDI_OPEN = [64, 59, 55, 50, 45, 40]; // E4 B3 G3 D3 A2 E2
 
-// Bb Major Cross-String Fingering — 3rd position (G · B · e strings only)
-// Sa=Bb3  Re=C4  Ga=D4  Ma=Eb4  Pa=F4  Dha=G4  Ni=A4  Sa'=Bb4
+// C Major Cross-String Fingering — 5th position (G · B · e strings only)
+// Sa=C4  Re=D4  Ga=E4  Ma=F4  Pa=G4  Dha=A4  Ni=B4  Sa'=C5
+// Reference: "Sargam Fretboard — C Major, Sa = C · G string fret 5"
 // All entries are on strings G(2), B(1), e(0). Octave is conveyed by the
 // visual style (dashed = lower, solid = main, glow = upper), NOT by string.
-// Key = MIDI pitch-class offset mapped to the main-octave MIDI number.
 const GBE_POSITIONS: Record<number, { string: number; fret: number }> = {
-  58: { string: 2, fret: 3 }, // Bb3/Sa   — G  fret 3
-  60: { string: 2, fret: 5 }, // C4 /Re   — G  fret 5
-  62: { string: 1, fret: 3 }, // D4 /Ga   — B  fret 3
-  63: { string: 1, fret: 4 }, // Eb4/Ma   — B  fret 4
-  65: { string: 1, fret: 6 }, // F4 /Pa   — B  fret 6
-  67: { string: 0, fret: 3 }, // G4 /Dha  — e  fret 3
-  69: { string: 0, fret: 5 }, // A4 /Ni   — e  fret 5
-  70: { string: 0, fret: 6 }, // Bb4/Sa'  — e  fret 6
+  60: { string: 2, fret: 5 }, // C4 /Sa   — G  fret 5
+  62: { string: 2, fret: 7 }, // D4 /Re   — G  fret 7
+  64: { string: 1, fret: 5 }, // E4 /Ga   — B  fret 5
+  65: { string: 1, fret: 6 }, // F4 /Ma   — B  fret 6
+  67: { string: 0, fret: 3 }, // G4 /Pa   — e  fret 3
+  69: { string: 0, fret: 5 }, // A4 /Dha  — e  fret 5
+  71: { string: 0, fret: 7 }, // B4 /Ni   — e  fret 7
+  72: { string: 0, fret: 8 }, // C5 /Sa'  — e  fret 8
 };
 
-// G·B·e open-string MIDI values (strings 0-2 only)
+// G·B·e open-string MIDI values (strings 0-2 only) — standard tuning, unchanged
 const GBE_OPEN_MIDI = [64, 59, 55]; // e, B, G
 
-// Sa = Bb3 (MIDI 58) — Bb Major cross-string fingering
-const DEFAULT_SA_MIDI = 58;
+// Sa = C4 (MIDI 60) — C Major cross-string fingering
+const DEFAULT_SA_MIDI = 60;
 
 function sargamNoteToMidi(note: ParsedSargamNote, saMidi: number): number {
   const semiOffset = SEMITONES[semitoneKey(note)] ?? 0;
@@ -69,13 +69,13 @@ function sargamNoteToMidi(note: ParsedSargamNote, saMidi: number): number {
   return saMidi + semiOffset + octaveOffset;
 }
 
-// SA_MIDI_MAIN = 58 (Bb3) is the lowest note in the main G·B·e octave.
-// SA_MIDI_HIGH = 70 (Bb4) is the highest.
-const SA_MIDI_MAIN = 58;
-const SA_MIDI_HIGH = 70;
+// SA_MIDI_MAIN = 60 (C4/Sa) is the lowest note in the main G·B·e octave.
+// SA_MIDI_HIGH = 72 (C5/Sa') is the highest.
+const SA_MIDI_MAIN = 60;
+const SA_MIDI_HIGH = 72;
 
 export function midiToGuitarPosition(midi: number): { string: number; fret: number } | null {
-  // Always stay on G·B·e strings — shift note into the main-octave range (58–70)
+  // Always stay on G·B·e strings — shift note into the main-octave range (60–72)
   // before the lookup. Octave context (lower/upper) is shown via visual style.
   let m = midi;
   while (m < SA_MIDI_MAIN) m += 12;
@@ -245,10 +245,12 @@ const REPEAT_RE = /^repeat\s+(part\s*\d+|\w+)/i;
 // ─── Key / Sa extraction ──────────────────────────────────────────────────────
 
 function noteNameToMidi(name: string): number {
+  // Maps to main octave (C4–B4, MIDI 60–71) so Sa-= annotations produce
+  // in-range values without needing subsequent octave-shifting.
   const notes: Record<string, number> = {
-    C: 48, "C#": 49, Db: 49, D: 50, "D#": 51, Eb: 51,
-    E: 52, F: 53, "F#": 54, Gb: 54, G: 55, "G#": 56,
-    Ab: 56, A: 57, "A#": 58, Bb: 58, B: 59,
+    C: 60, "C#": 61, Db: 61, D: 62, "D#": 63, Eb: 63,
+    E: 64, F: 65, "F#": 66, Gb: 66, G: 67, "G#": 68,
+    Ab: 68, A: 69, "A#": 70, Bb: 70, B: 71,
   };
   return notes[name] ?? DEFAULT_SA_MIDI;
 }
