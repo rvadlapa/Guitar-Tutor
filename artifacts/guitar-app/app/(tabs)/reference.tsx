@@ -27,14 +27,16 @@ const T = {
 //   3 Ring   = purple  4 Pinky  = red/pink
 //   Root Sa  = brown   (overrides finger colour)
 
+// Colours extracted from the reference design image.
+// Each circle is a solid vivid fill — the colour IS the circle — with white text.
 const FINGER_STYLE: Record<1|2|3|4, { bg: string; border: string; text: string; name: string }> = {
-  1: { bg: "#0E1C34", border: "#5A9AD4", text: "#90C0EC", name: "idx"  },
-  2: { bg: "#0A2010", border: "#4AAE4A", text: "#7ED47E", name: "mid"  },
-  3: { bg: "#1C1040", border: "#8860CC", text: "#B898E8", name: "rng"  },
-  4: { bg: "#300E10", border: "#C85858", text: "#E89090", name: "pink" },
+  1: { bg: "#5A8EC8", border: "#82B4E8", text: "#FFFFFF", name: "idx"  },  // blue
+  2: { bg: "#3EA83A", border: "#66CC66", text: "#FFFFFF", name: "mid"  },  // green
+  3: { bg: "#7850BC", border: "#A880DC", text: "#FFFFFF", name: "rng"  },  // purple
+  4: { bg: "#C85050", border: "#E87878", text: "#FFFFFF", name: "pink" },  // red/coral
 };
 
-const ROOT_STYLE = { bg: "#5A2A00", border: "#C4761A", text: "#F0C060" };
+const ROOT_STYLE = { bg: "#A85818", border: "#D07820", text: "#FFFFFF" };  // amber-brown
 
 // Finger assignment from fret number (3rd-position cross-string anchor at fret 3)
 //   Frets 3-6  → fingers 1-4  (3rd position)
@@ -247,7 +249,7 @@ function NoteCircle({
       }}>{label}</Text>
       {showSub && (
         <Text style={{
-          color: s.border,
+          color: "rgba(255,255,255,0.72)",
           fontSize: fingerFs,
           fontWeight: "500",
           lineHeight: fingerFs + 2,
