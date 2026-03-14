@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { parseGuitarTab, extractSongMeta } from "@/utils/tabParser";
 import { isSargamText, parseSargamText } from "@/utils/sargamParser";
+import { isWesternNotationText, parseWesternNotation } from "@/utils/westernNotationParser";
 import { TabSong } from "@/context/TabContext";
 
 type Props = {
@@ -119,7 +120,7 @@ export default function UploadModal({ visible, onClose, onAdd }: Props) {
 
   const handleSubmit = () => {
     if (!text.trim()) {
-      Alert.alert("No content", "Please paste a guitar tab or sargam notation.");
+      Alert.alert("No content", "Please paste a guitar tab, sargam, or Western notation.");
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -127,6 +128,8 @@ export default function UploadModal({ visible, onClose, onAdd }: Props) {
     let song: TabSong;
     if (isSargamText(text)) {
       song = parseSargamText(text, title.trim() || undefined);
+    } else if (isWesternNotationText(text)) {
+      song = parseWesternNotation(text, title.trim() || undefined);
     } else {
       song = parseGuitarTab(text, title.trim() || undefined);
     }
