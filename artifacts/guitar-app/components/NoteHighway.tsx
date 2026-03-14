@@ -239,27 +239,14 @@ function NoteHighwayInner({ chords, currentIndex, isPlaying, bpm }: Props) {
                         },
                       ]}
                     >
-                      {/* Sargam syllable */}
-                      <Text
-                        style={[
-                          styles.noteLabel,
-                          {
-                            color:    isPast ? "rgba(255,255,255,0.3)" : "#FFF",
-                            fontSize: label.length > 3 ? 10 : 12,
-                          },
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {label}
-                      </Text>
-                      {/* Fret number — shown on all visible notes */}
+                      {/* Fret number — top */}
                       {!isPast && (
                         <Text
                           style={[
-                            styles.fretSub,
+                            styles.fretNum,
                             {
-                              color:    isActive ? "#FFF" : hexToRgba(color, 0.85),
-                              fontSize: isActive ? 13 : 11,
+                              color:      isActive ? "#FFF" : hexToRgba(color, 0.85),
+                              fontSize:   isActive ? 14 : 12,
                               fontWeight: isActive ? "900" : "700",
                             },
                           ]}
@@ -267,6 +254,19 @@ function NoteHighwayInner({ chords, currentIndex, isPlaying, bpm }: Props) {
                           {fretNum}
                         </Text>
                       )}
+                      {/* Sargam syllable — bottom */}
+                      <Text
+                        style={[
+                          styles.noteLabel,
+                          {
+                            color:    isPast ? "rgba(255,255,255,0.3)" : hexToRgba(color, isActive ? 1 : 0.8),
+                            fontSize: label.length > 3 ? 9 : 10,
+                          },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {label}
+                      </Text>
                     </View>
                   );
                 });
@@ -386,13 +386,11 @@ const styles = StyleSheet.create({
     fontWeight:   "700",
     fontFamily:   Platform.OS === "ios" ? "Menlo" : "monospace",
     letterSpacing: -0.3,
-    lineHeight:   15,
-    marginTop:    2,
+    lineHeight:   12,
   },
-  fretSub: {
+  fretNum: {
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    lineHeight: 14,
-    marginTop:  0,
+    lineHeight: 15,
   },
 
   // ── Playhead ──────────────────────────────────────────────────────────────────
