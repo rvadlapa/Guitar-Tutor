@@ -15,6 +15,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { TabProvider } from "@/context/TabContext";
+import { preloadWebSamples } from "@/utils/audioEngine";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -39,6 +40,7 @@ export default function RootLayout() {
   useEffect(() => {
     if (fontsLoaded || fontError) {
       SplashScreen.hideAsync();
+      preloadWebSamples();
     }
   }, [fontsLoaded, fontError]);
 
