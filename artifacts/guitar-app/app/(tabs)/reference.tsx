@@ -18,17 +18,38 @@ const T = {
   text:      "#F0EAE0",
   textSub:   "#B0A090",
   textMuted: "#706050",
-  root:      "#C4761A",   // Sa root fill
-  rootText:  "#FFF0DC",
-  main:      "#2E2816",   // middle octave fill
-  mainBrd:   "#E8872A",   // orange border
-  lower:     "#0E2820",   // lower octave fill
-  lowerBrd:  "#45D68A",   // teal border
-  upper:     "#2E1525",   // upper octave fill
-  upperBrd:  "#FF8FAD",   // rose border
   tint:      "#E8872A",
   strLine:   "#4A3A2A",
 };
+
+// ─── Finger-based colour system ────────────────────────────────────────────
+//   1 Index  = blue    2 Middle = green
+//   3 Ring   = purple  4 Pinky  = red/pink
+//   Root Sa  = brown   (overrides finger colour)
+
+const FINGER_STYLE: Record<1|2|3|4, { bg: string; border: string; text: string; name: string }> = {
+  1: { bg: "#0E1C34", border: "#5A9AD4", text: "#90C0EC", name: "idx"  },
+  2: { bg: "#0A2010", border: "#4AAE4A", text: "#7ED47E", name: "mid"  },
+  3: { bg: "#1C1040", border: "#8860CC", text: "#B898E8", name: "rng"  },
+  4: { bg: "#300E10", border: "#C85858", text: "#E89090", name: "pink" },
+};
+
+const ROOT_STYLE = { bg: "#5A2A00", border: "#C4761A", text: "#F0C060" };
+
+// Finger assignment from fret number (3rd-position cross-string anchor at fret 3)
+//   Frets 3-6  → fingers 1-4  (3rd position)
+//   Fret 7     → finger 4  (pinky stretch)
+//   Frets 8-11 → fingers 1-4  (8th position after shift)
+function getFinger(fret: number): 1 | 2 | 3 | 4 {
+  if (fret <= 0) return 1;
+  if (fret <= 2) return fret as 1 | 2;
+  if (fret <= 6) return Math.min(fret - 2, 4) as 1 | 2 | 3 | 4;
+  if (fret === 7) return 4;
+  if (fret <= 11) return Math.min(fret - 7, 4) as 1 | 2 | 3 | 4;
+  return 1;
+}
+
+function fingerStyle(fret: number) { return FINGER_STYLE[getFinger(fret)]; }
 
 // ─── Note types ─────────────────────────────────────────────────────────────
 
@@ -169,38 +190,70 @@ const NOTE_KEY = [
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
 
-const FRET_W   = 46;
-const NOTE_D   = 34;  // diameter of note circle
-const STRING_H = 52;
+const FRET_W   = 52;
+const NOTE_D   = 44;  // diameter: large enough for note name + finger sub-label
+const STRING_H = 58;
 const LABEL_W  = 40;
 const FRET_DOT_FRETS = [3, 5, 7, 9, 12];
 const MAX_FRET = 12;
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
-function noteStyle(type: NType) {
-  switch (type) {
-    case "root":  return { bg: T.root,  border: T.root,  txt: T.rootText };
-    case "main":  return { bg: T.main,  border: T.mainBrd,  txt: "#E8872A" };
-    case "lower": return { bg: T.lower, border: T.lowerBrd, txt: "#45D68A" };
-    case "upper": return { bg: T.upper, border: T.upperBrd, txt: "#FF8FAD" };
-  }
-}
+// NoteCircle — coloured by finger (from fret), styled by octave type.
+// fret prop drives finger colour; type drives border style + glow.
+// showFinger=true adds the "1 idx" sub-label inside the circle.
+function NoteCircle({
+  label, type, fret = -1, size = NOTE_D, showFinger = true,
+}: {
+  label: string; type: NType; fret?: number; size?: number; showFinger?: boolean;
+}) {
+  const isRoot  = type === "root";
+  const isLower = type === "lower";
+  const isUpper = type === "upper";
 
-function NoteCircle({ label, type, size = NOTE_D }: { label: string; type: NType; size?: number }) {
-  const s = noteStyle(type);
-  const fontSize = label.length > 3 ? 9 : label.length === 3 ? 10 : 12;
+  const s  = isRoot ? ROOT_STYLE : fingerStyle(fret);
+  const fg = isRoot ? null : getFinger(fret);
+
+  const noteFs   = label.length > 3 ? 9 : label.length === 3 ? 10 : Math.round(size * 0.3);
+  const fingerFs = Math.round(size * 0.18);
+  const showSub  = showFinger && fg !== null && size >= 36;
+
   return (
     <View style={{
       width: size, height: size, borderRadius: size / 2,
-      backgroundColor: s.bg, borderWidth: 1.5, borderColor: s.border,
+      backgroundColor: s.bg,
+      borderWidth: isLower ? 1.5 : 2,
+      borderColor: s.border,
+      borderStyle: isLower ? "dashed" : "solid",
+      opacity: isLower ? 0.82 : 1,
       alignItems: "center", justifyContent: "center",
+      gap: 0,
+      // upper octave: soft glow
+      ...(isUpper ? {
+        shadowColor: s.border,
+        shadowOpacity: 0.75,
+        shadowRadius: 7,
+        shadowOffset: { width: 0, height: 0 },
+        elevation: 5,
+      } : {}),
     }}>
       <Text style={{
-        color: s.txt, fontSize, fontWeight: type === "root" ? "700" : "600",
-        fontStyle: type === "lower" ? "italic" : "normal",
+        color: s.text,
+        fontSize: noteFs,
+        fontWeight: isRoot ? "800" : "700",
+        fontStyle: isLower ? "italic" : "normal",
         letterSpacing: -0.3,
+        lineHeight: noteFs + 1,
       }}>{label}</Text>
+      {showSub && (
+        <Text style={{
+          color: s.border,
+          fontSize: fingerFs,
+          fontWeight: "500",
+          lineHeight: fingerFs + 2,
+          letterSpacing: 0,
+        }}>{fg} {(FINGER_STYLE[fg!] as any).name}</Text>
+      )}
     </View>
   );
 }
@@ -266,7 +319,7 @@ function StringRow({ name, color, notes, maxFret }: {
               backgroundColor: T.strLine,
               top: STRING_H / 2 - 0.75,
             }} />
-            {n ? <NoteCircle label={n.label} type={n.type} /> : null}
+            {n ? <NoteCircle label={n.label} type={n.type} fret={n.fret} /> : null}
           </View>
         );
       })}
@@ -307,7 +360,7 @@ function ScaleRun() {
           {SCALE_RUN.map((n, i) => (
             <React.Fragment key={i}>
               <View style={{ alignItems: "center", gap: 4 }}>
-                <NoteCircle label={n.label} type={n.type} size={36} />
+                <NoteCircle label={n.label} type={n.type} fret={n.fret} size={40} showFinger={false} />
                 <Text style={{ color: T.textMuted, fontSize: 9, letterSpacing: 0 }}>
                   {n.string}-{n.fret}
                 </Text>
@@ -324,20 +377,52 @@ function ScaleRun() {
 }
 
 function Legend() {
-  const items: { label: string; type: NType; desc: string }[] = [
-    { label: "sa", type: "lower", desc: "Lower octave (italic)" },
-    { label: "Sa", type: "main",  desc: "Middle octave" },
-    { label: "Sa'",type: "upper", desc: "Upper octave ( ′ )" },
-    { label: "Sa", type: "root",  desc: "Sa root notes" },
+  // Finger section: uses a fake fret that maps to the correct finger
+  const fingerItems: { label: string; type: NType; fret: number; desc: string }[] = [
+    { label: "1", type: "main", fret: 3,  desc: "Index"  },
+    { label: "2", type: "main", fret: 4,  desc: "Middle" },
+    { label: "3", type: "main", fret: 5,  desc: "Ring"   },
+    { label: "4", type: "main", fret: 6,  desc: "Pinky"  },
   ];
+  // Octave section: same finger (fret 3 = index) but different types
+  const octaveItems: { label: string; type: NType; fret: number; desc: string }[] = [
+    { label: "sa",  type: "lower", fret: 3, desc: "Lower (dashed)"  },
+    { label: "Sa",  type: "main",  fret: 3, desc: "Middle (solid)"  },
+    { label: "Sa′", type: "upper", fret: 3, desc: "Upper (glow)"    },
+    { label: "Sa",  type: "root",  fret: 3, desc: "Root Sa"         },
+  ];
+  const SIZE = 28;
   return (
-    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 4 }}>
-      {items.map((it) => (
-        <View key={it.desc} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <NoteCircle label={it.label} type={it.type} size={28} />
-          <Text style={{ color: T.textSub, fontSize: 11 }}>{it.desc}</Text>
-        </View>
-      ))}
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16, marginBottom: 4 }}>
+      {/* Finger colours */}
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        <Text style={{ color: T.textMuted, fontSize: 10, width: "100%", marginBottom: 2, textTransform: "uppercase", letterSpacing: 1 }}>Finger</Text>
+        {fingerItems.map((it) => {
+          const s = FINGER_STYLE[getFinger(it.fret)];
+          return (
+            <View key={it.desc} style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+              <View style={{
+                width: SIZE, height: SIZE, borderRadius: SIZE / 2,
+                backgroundColor: s.bg, borderWidth: 2, borderColor: s.border,
+                alignItems: "center", justifyContent: "center",
+              }}>
+                <Text style={{ color: s.text, fontSize: 12, fontWeight: "700" }}>{it.label}</Text>
+              </View>
+              <Text style={{ color: T.textSub, fontSize: 11 }}>{it.desc}</Text>
+            </View>
+          );
+        })}
+      </View>
+      {/* Octave styles */}
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        <Text style={{ color: T.textMuted, fontSize: 10, width: "100%", marginBottom: 2, textTransform: "uppercase", letterSpacing: 1 }}>Octave</Text>
+        {octaveItems.map((it) => (
+          <View key={it.desc} style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+            <NoteCircle label={it.label} type={it.type} fret={it.fret} size={SIZE} showFinger={false} />
+            <Text style={{ color: T.textSub, fontSize: 11 }}>{it.desc}</Text>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
