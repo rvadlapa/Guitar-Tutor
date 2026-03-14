@@ -36,11 +36,23 @@ type NType = "root" | "main" | "lower" | "upper";
 
 interface NotePos { label: string; fret: number; type: NType; }
 
-// ─── Fretboard data (Bb Major, standard tuning) ──────────────────────────────
+// ─── Fretboard data ───────────────────────────────────────────────────────────
 //
-// G string: open = G3 (MIDI 55)   Bb3=fret3(Sa), C4=fret5(Re), D4=fret7(Ga)
-// B string: open = B3 (MIDI 59)   D4=fret3(Ga), Eb4=fret4(Ma), F4=fret6(Pa)
-// e string: open = E4 (MIDI 64)   G4=fret3(Dha), A4=fret5(Ni), Bb4=fret6(Sa'), C5=fret8(Re'), D5=fret10(Ga'), Eb5=fret11(Ma')
+// Positions sourced from CROSS_STRING_POSITIONS in sargamParser.ts (Bb Major,
+// standard tuning, cross-string 3rd-position fingering).
+//
+// MIDI open strings: E2=40  A2=45  D3=50  G3=55  B3=59  E4=64
+//
+// Lower octave (on E / A / D strings):
+//   sa  Bb2=46 → E  fret 6      re  C3=48  → A  fret 3
+//   ga  D3=50  → A  fret 5      ma  Eb3=51 → A  fret 6
+//   pa  F3=53  → D  fret 3      dha G3=55  → D  fret 5
+//   ni  A3=57  → D  fret 7
+// Main octave (on G / B / e strings):
+//   Sa  Bb3=58 → G  fret 3      Re  C4=60  → G  fret 5
+//   Ga  D4=62  → B  fret 3      Ma  Eb4=63 → B  fret 4
+//   Pa  F4=65  → B  fret 6      Dha G4=67  → e  fret 3
+//   Ni  A4=69  → e  fret 5      Sa' Bb4=70 → e  fret 6
 
 const PRIMARY: { name: string; color: string; notes: NotePos[] }[] = [
   {
@@ -84,67 +96,65 @@ const PRIMARY: { name: string; color: string; notes: NotePos[] }[] = [
   },
 ];
 
-// D string: open = D3 (MIDI 50)   Eb3=fret1(ma), F3=fret3(pa), G3=fret5(dha), A3=fret7(ni), Bb3=fret8(Sa)
-// A string: open = A2 (MIDI 45)   Bb2=fret1(sa), C3=fret3(re), D3=fret5(ga), Eb3=fret6(ma), F3=fret8(pa)
-// E string: open = E2 (MIDI 40)   G2=fret3(dha), A2=fret5(ni), Bb2=fret6(sa), C3=fret8(re), D3=fret10(ga)
+// Lower strings — cross-string positions only (from CROSS_STRING_POSITIONS):
+//   D string role: pa(3=F3)  dha(5=G3)  ni(7=A3)  [+ Sa(8=Bb3) root reference]
+//   A string role: re(3=C3)  ga(5=D3)   ma(6=Eb3) [+ sa(1=Bb2) root reference]
+//   E string role: sa(6=Bb2) [+ ni(5=A2) below as approach note]
 
 const LOWER: { name: string; color: string; notes: NotePos[] }[] = [
   {
     name: "D",
     color: "#5BC4FF",
     notes: [
-      { label: "ga", fret: 0,  type: "lower" },
-      { label: "ma", fret: 1,  type: "lower" },
-      { label: "pa", fret: 3,  type: "lower" },
-      { label: "dha",fret: 5,  type: "lower" },
-      { label: "ni", fret: 7,  type: "lower" },
-      { label: "Sa", fret: 8,  type: "root"  },
+      { label: "pa", fret: 3,  type: "lower" }, // F3  — cross-string position
+      { label: "dha",fret: 5,  type: "lower" }, // G3  — cross-string position
+      { label: "ni", fret: 7,  type: "lower" }, // A3  — cross-string position
+      { label: "Sa", fret: 8,  type: "root"  }, // Bb3 — root reference (same as G-3)
     ],
   },
   {
     name: "A",
     color: "#B47BFF",
     notes: [
-      { label: "sa", fret: 1,  type: "root"  },
-      { label: "re", fret: 3,  type: "lower" },
-      { label: "ga", fret: 5,  type: "lower" },
-      { label: "ma", fret: 6,  type: "lower" },
-      { label: "pa", fret: 8,  type: "lower" },
+      { label: "sa", fret: 1,  type: "root"  }, // Bb2 — root reference (same as E-6)
+      { label: "re", fret: 3,  type: "lower" }, // C3  — cross-string position
+      { label: "ga", fret: 5,  type: "lower" }, // D3  — cross-string position
+      { label: "ma", fret: 6,  type: "lower" }, // Eb3 — cross-string position
     ],
   },
   {
     name: "E",
     color: "#57FF9E",
     notes: [
-      { label: "dha",fret: 3,  type: "lower" },
-      { label: "ni", fret: 5,  type: "lower" },
-      { label: "sa", fret: 6,  type: "root"  },
-      { label: "re", fret: 8,  type: "lower" },
-      { label: "ga", fret: 10, type: "lower" },
+      { label: "ni", fret: 5,  type: "lower" }, // A2  — approach note
+      { label: "sa", fret: 6,  type: "root"  }, // Bb2 — cross-string position
     ],
   },
 ];
 
-// Full ascending scale run
+// Full ascending scale run — positions from CROSS_STRING_POSITIONS in sargamParser.ts
+// Lower octave: sa(E-6) re(A-3) ga(A-5) ma(A-6) pa(D-3) dha(D-5) ni(D-7)
+// Main octave:  Sa(G-3) Re(G-5) Ga(B-3) Ma(B-4) Pa(B-6) Dha(e-3) Ni(e-5) Sa'(e-6)
+// Upper:        Re'(e-8) Ga'(e-10) Ma'(e-11)
 const SCALE_RUN: { label: string; string: string; fret: number; type: NType }[] = [
-  { label: "sa",  string: "E", fret: 6,  type: "root"  },
-  { label: "re",  string: "E", fret: 8,  type: "lower" },
-  { label: "ga",  string: "A", fret: 5,  type: "lower" },
-  { label: "ma",  string: "A", fret: 6,  type: "lower" },
-  { label: "pa",  string: "A", fret: 8,  type: "lower" },
-  { label: "dha", string: "D", fret: 5,  type: "lower" },
-  { label: "ni",  string: "D", fret: 7,  type: "lower" },
-  { label: "Sa",  string: "G", fret: 3,  type: "root"  },
-  { label: "Re",  string: "G", fret: 5,  type: "main"  },
-  { label: "Ga",  string: "B", fret: 3,  type: "main"  },
-  { label: "Ma",  string: "B", fret: 4,  type: "main"  },
-  { label: "Pa",  string: "B", fret: 6,  type: "main"  },
-  { label: "Dha", string: "e", fret: 3,  type: "main"  },
-  { label: "Ni",  string: "e", fret: 5,  type: "main"  },
-  { label: "Sa'", string: "e", fret: 6,  type: "root"  },
-  { label: "Re'", string: "e", fret: 8,  type: "upper" },
-  { label: "Ga'", string: "e", fret: 10, type: "upper" },
-  { label: "Ma'", string: "e", fret: 11, type: "upper" },
+  { label: "sa",  string: "E", fret: 6,  type: "root"  }, // Bb2 — E fret 6
+  { label: "re",  string: "A", fret: 3,  type: "lower" }, // C3  — A fret 3  ← was E-8
+  { label: "ga",  string: "A", fret: 5,  type: "lower" }, // D3  — A fret 5
+  { label: "ma",  string: "A", fret: 6,  type: "lower" }, // Eb3 — A fret 6
+  { label: "pa",  string: "D", fret: 3,  type: "lower" }, // F3  — D fret 3  ← was A-8
+  { label: "dha", string: "D", fret: 5,  type: "lower" }, // G3  — D fret 5
+  { label: "ni",  string: "D", fret: 7,  type: "lower" }, // A3  — D fret 7
+  { label: "Sa",  string: "G", fret: 3,  type: "root"  }, // Bb3 — G fret 3
+  { label: "Re",  string: "G", fret: 5,  type: "main"  }, // C4  — G fret 5
+  { label: "Ga",  string: "B", fret: 3,  type: "main"  }, // D4  — B fret 3
+  { label: "Ma",  string: "B", fret: 4,  type: "main"  }, // Eb4 — B fret 4
+  { label: "Pa",  string: "B", fret: 6,  type: "main"  }, // F4  — B fret 6
+  { label: "Dha", string: "e", fret: 3,  type: "main"  }, // G4  — e fret 3
+  { label: "Ni",  string: "e", fret: 5,  type: "main"  }, // A4  — e fret 5
+  { label: "Sa'", string: "e", fret: 6,  type: "root"  }, // Bb4 — e fret 6
+  { label: "Re'", string: "e", fret: 8,  type: "upper" }, // C5  — e fret 8
+  { label: "Ga'", string: "e", fret: 10, type: "upper" }, // D5  — e fret 10
+  { label: "Ma'", string: "e", fret: 11, type: "upper" }, // Eb5 — e fret 11
 ];
 
 const NOTE_KEY = [
