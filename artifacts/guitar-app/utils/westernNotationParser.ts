@@ -253,15 +253,17 @@ export function isWesternNotationText(text: string): boolean {
   // Reject sargam (consecutive syllables like SaRe or space-separated Sa Re)
   if (/((?:Sa|sa|Re|re|Ri|ri|Ga|ga|Ma|ma|Pa|pa|Dha|dha|Ni|ni){2,})/g.test(text)) return false;
 
-  // Count space-delimited tokens that look like note chord-groups
+  // Count space-delimited tokens that look like note chord-groups.
+  // A single token like "CC" or "G#D#" is perfectly valid western input —
+  // no minimum token count required.
   const tokens = text.trim().split(/\s+/).filter(Boolean);
-  if (tokens.length < 2) return false;
+  if (tokens.length === 0) return false;
 
   let noteTokens = 0;
   for (const tok of tokens) {
     if (tokenizeChordToken(tok).length > 0) noteTokens++;
   }
 
-  // At least 60% of tokens must be parseable as note names
-  return noteTokens / tokens.length >= 0.6 && noteTokens >= 3;
+  // At least 60% of tokens must be parseable as note names, and at least 1
+  return noteTokens / tokens.length >= 0.6 && noteTokens >= 1;
 }
