@@ -6,7 +6,6 @@ import {
   StyleSheet,
   Text,
   View,
-  useColorScheme,
 } from "react-native";
 import Colors from "@/constants/colors";
 import { useTabContext } from "@/context/TabContext";
@@ -14,9 +13,9 @@ import { useTabContext } from "@/context/TabContext";
 const PRESETS = [40, 60, 80, 100, 120, 140, 160];
 
 export default function SpeedControl() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
-  const colors = isDark ? Colors.dark : Colors.light;
+  // Player screen is always dark-themed
+  const isDark = true;
+  const colors = Colors.dark;
   const { bpm, setBpm } = useTabContext();
 
   const handleDecrease = () => {

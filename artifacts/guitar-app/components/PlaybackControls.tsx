@@ -7,7 +7,6 @@ import {
   StyleSheet,
   Text,
   View,
-  useColorScheme,
 } from "react-native";
 import Colors from "@/constants/colors";
 import { useTabContext } from "@/context/TabContext";
@@ -17,9 +16,9 @@ type Props = {
 };
 
 export default function PlaybackControls({ totalChords }: Props) {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
-  const colors = isDark ? Colors.dark : Colors.light;
+  // Player screen is always dark-themed
+  const isDark = true;
+  const colors = Colors.dark;
   const {
     isPlaying, play, pause, stop, nextChord, prevChord,
     currentChordIndex, audioEnabled, setAudioEnabled,
