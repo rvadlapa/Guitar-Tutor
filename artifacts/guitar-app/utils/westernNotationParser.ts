@@ -138,8 +138,14 @@ export function parseWesternNotation(rawText: string, title?: string): TabSong {
 
     if (!isNoteOnlyLine(trimmed)) continue;
 
+    // Extract inline (x2)/(x3) repeat marker and strip it before parsing
+    const repeatMatch = trimmed.match(/\(x(\d+)\)/i);
+    const repeatCount = repeatMatch ? parseInt(repeatMatch[1], 10) : 1;
+    const cleanLine = trimmed.replace(/\(x\d+\)/gi, "").trim();
+
     // Each whitespace-delimited token = one chord beat
-    const tokens = trimmed.split(/\s+/).filter(Boolean);
+    const tokens = cleanLine.split(/\s+/).filter(Boolean);
+    const lineChords: typeof currentChords = [];
 
     for (const token of tokens) {
       const noteNames = tokenizeChordToken(token);
@@ -156,7 +162,7 @@ export function parseWesternNotation(rawText: string, title?: string): TabSong {
         const pos = midiToGuitarPosition(midi);
         if (!pos) continue;
 
-        currentChords.push({
+        lineChords.push({
           id: generateId(),
           notes: [{
             string: pos.string,
@@ -169,6 +175,11 @@ export function parseWesternNotation(rawText: string, title?: string): TabSong {
 
         prevMidi = midi;
       }
+    }
+
+    // Push lineChords repeatCount times (default 1)
+    for (let r = 0; r < repeatCount; r++) {
+      currentChords.push(...lineChords.map((c) => ({ ...c, id: generateId() })));
     }
   }
 

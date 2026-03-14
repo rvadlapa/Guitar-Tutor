@@ -321,9 +321,14 @@ export function parseSargamText(rawText: string, title?: string): TabSong {
 
     // ── Sargam line ─────────────────────────────────────────────────────────
     if (isSargamLine(trimmed)) {
-      const lineChords = sargamLineToCords(trimmed, saMidi);
-      // Repeat the line's chords pendingRepeat times
-      for (let r = 0; r < pendingRepeat; r++) {
+      // (x2) / (x3) etc. may appear on the sargam line itself OR be carried
+      // from the preceding lyric line — prefer the inline count.
+      const inlineRepeat = extractRepeatCount(trimmed);
+      const repeatCount = inlineRepeat > 1 ? inlineRepeat : pendingRepeat;
+      // Strip the repeat marker before parsing notes
+      const cleanLine = trimmed.replace(/\(x\d+\)/gi, "").trim();
+      const lineChords = sargamLineToCords(cleanLine, saMidi);
+      for (let r = 0; r < repeatCount; r++) {
         const cloned = lineChords.map((c) => ({ ...c, id: generateId() }));
         currentChords.push(...cloned);
       }
