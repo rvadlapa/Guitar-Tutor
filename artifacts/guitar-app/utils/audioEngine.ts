@@ -339,11 +339,10 @@ async function playNativeNote(si: number, fret: number | "x" | "0"): Promise<voi
     if (!sound) {
       const pcm = generatePCM(22050, freq, si, 3.0, inst);
       const wav = pcmToWav(pcm, 22050);
-      const FileSystem = await import("expo-file-system");
-      const cacheDir = FileSystem.cacheDirectory ?? FileSystem.default?.cacheDirectory ?? "";
+      const FileSystem = await import("expo-file-system/legacy");
+      const cacheDir = FileSystem.cacheDirectory ?? "";
       const uri = `${cacheDir}${cacheKey}.wav`;
-      const writeAsync = FileSystem.writeAsStringAsync ?? FileSystem.default?.writeAsStringAsync;
-      await writeAsync(uri, wav, { encoding: "base64" as any });
+      await FileSystem.writeAsStringAsync(uri, wav, { encoding: "base64" as any });
       const { sound: s } = await Audio.Sound.createAsync({ uri }, { shouldPlay: false, volume: 0.9 });
       nativeCache.set(cacheKey, s);
       sound = s;

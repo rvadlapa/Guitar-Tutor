@@ -14,7 +14,7 @@ const NUM_STRINGS   = 3;          // e · B · G only
 const LANE_HEIGHT   = 76;         // px per string lane
 const NOTE_SIZE     = 50;         // circle diameter
 const CHORD_WIDTH   = 80;         // px per full beat
-const LABEL_WIDTH   = 46;         // left label column width
+const LABEL_WIDTH   = 56;         // left label column width
 export const HIGHWAY_HEIGHT = LANE_HEIGHT * NUM_STRINGS; // 228
 
 // Window of chords to mount around the playhead
@@ -22,7 +22,9 @@ const LOOK_AHEAD  = 28;
 const LOOK_BEHIND = 4;
 
 // Only the three strings we use (index matches note.string from parser)
+// Guitar string numbers: 1 = high e (thinnest), 2 = B, 3 = G
 const STRING_NAMES = ["e", "B", "G"];
+const STRING_NUMBERS = ["1", "2", "3"]; // standard guitar numbering
 
 // String visual properties: colour, line thickness
 const STRING_META = [
@@ -119,13 +121,18 @@ function NoteHighwayInner({ chords, currentIndex, isPlaying, bpm }: Props) {
       <View style={styles.labelCol} pointerEvents="none">
         {STRING_NAMES.map((name, si) => (
           <View key={si} style={[styles.labelCell, { height: LANE_HEIGHT }]}>
-            {/* Swatch line showing string colour */}
+            {/* String number badge */}
             <View
               style={[
-                styles.stringSwatchLine,
-                { backgroundColor: STRING_META[si].color },
+                styles.stringNumBadge,
+                { borderColor: STRING_META[si].color },
               ]}
-            />
+            >
+              <Text style={[styles.stringNumText, { color: STRING_META[si].color }]}>
+                {STRING_NUMBERS[si]}
+              </Text>
+            </View>
+            {/* String name */}
             <Text style={[styles.labelText, { color: STRING_META[si].color }]}>
               {name}
             </Text>
@@ -322,16 +329,24 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap:            6,
   },
-  stringSwatchLine: {
-    width:        12,
-    height:       2,
-    borderRadius: 1,
+  stringNumBadge: {
+    width:        22,
+    height:       22,
+    borderRadius: 11,
+    borderWidth:  1.5,
+    alignItems:     "center",
+    justifyContent: "center",
+  },
+  stringNumText: {
+    fontSize:   11,
+    fontWeight: "800",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
   },
   labelText: {
-    fontSize:    12,
+    fontSize:    11,
     fontWeight:  "700",
     fontFamily:  Platform.OS === "ios" ? "Menlo" : "monospace",
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
 
   // ── Fretboard surface (right of label col) ───────────────────────────────────
