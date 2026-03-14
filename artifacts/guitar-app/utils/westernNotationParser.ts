@@ -41,11 +41,13 @@ const OFFSET_TO_SARGAM: Record<number, string> = {
 
 function midiToSargamLabel(midi: number): string {
   const offset = ((midi - SA_MIDI) % 12 + 12) % 12;
-  return OFFSET_TO_SARGAM[offset] ?? "?";
+  const label = OFFSET_TO_SARGAM[offset] ?? "?";
+  // Notes below the middle Sa (C4 = MIDI 60) are lower octave → lowercase
+  return midi < SA_MIDI ? label.toLowerCase() : label;
 }
 
-// midiToGuitarPosition is imported from sargamParser — uses the same
-// G·B·e cross-string 3rd-position table as the sargam notation display.
+// midiToGuitarPosition is imported from sargamParser — uses the unified
+// 6-string C major cross-string position table.
 
 // ─── Octave-aware MIDI helper ─────────────────────────────────────────────────
 //

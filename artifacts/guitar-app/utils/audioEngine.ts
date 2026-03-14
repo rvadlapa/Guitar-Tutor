@@ -273,11 +273,16 @@ export function preloadWebSamples(): void {
   if (Platform.OS !== "web") return;
   const ctx = getCtx();
   if (!ctx) return;
-  // C major cross-string positions: G(5,7) B(5,6) e(3,5,7,8)
+  // C major cross-string positions across all 6 strings
+  // Lower octave (A/D/G): sa re ga ma pa dha ni
+  // Middle octave (G/B/e): Sa Re Ga Ma Pa Dha Ni Sa'
   const positions: [number, number][] = [
-    [2, 5], [2, 7],
-    [1, 5], [1, 6],
-    [0, 3], [0, 5], [0, 7], [0, 8],
+    [4, 3],              // A  fret 3  = sa (C3)
+    [3, 0], [3, 2], [3, 3], [3, 5], // D open/2/3/5 = re ga ma pa
+    [2, 2], [2, 4],      // G  fret 2/4 = dha ni
+    [2, 5], [2, 7],      // G  fret 5/7 = Sa Re
+    [1, 5], [1, 6],      // B  fret 5/6 = Ga Ma
+    [0, 3], [0, 5], [0, 7], [0, 8], // e fret 3/5/7/8 = Pa Dha Ni Sa'
   ];
   positions.forEach(([si, fret]) => {
     const freq = getFretFrequency(si, fret);

@@ -10,32 +10,38 @@ import {
 import { TabChord } from "@/context/TabContext";
 
 // ─── Layout ────────────────────────────────────────────────────────────────────
-const NUM_STRINGS   = 3;          // e · B · G only
-const LANE_HEIGHT   = 76;         // px per string lane
-const NOTE_SIZE     = 50;         // circle diameter
+const NUM_STRINGS   = 6;          // e · B · G · D · A · E (all 6)
+const LANE_HEIGHT   = 58;         // px per string lane
+const NOTE_SIZE     = 44;         // circle diameter
 const CHORD_WIDTH   = 80;         // px per full beat
 const LABEL_WIDTH   = 44;         // left label column width
-export const HIGHWAY_HEIGHT = LANE_HEIGHT * NUM_STRINGS; // 228
+export const HIGHWAY_HEIGHT = LANE_HEIGHT * NUM_STRINGS; // 348
 
 // Window of chords to mount around the playhead
 const LOOK_AHEAD  = 28;
 const LOOK_BEHIND = 4;
 
-// Only the three strings we use (index matches note.string from parser)
-// Guitar string numbers: 1 = high e (thinnest), 2 = B, 3 = G
-const STRING_NAMES = ["e", "B", "G"];
-// String visual properties: colour, line thickness
+// String indices: 0 = high e (thinnest) → 5 = low E (thickest)
+const STRING_NAMES = ["e", "B", "G", "D", "A", "E"];
+
+// String visual properties: colour + line thickness (thicker = lower/wound)
 const STRING_META = [
-  { color: "#E8E8F0", lineW: 1.0, label: "e" },   // e — plain steel, thinnest
-  { color: "#D4C090", lineW: 1.6, label: "B" },   // B — slightly warm
-  { color: "#C09050", lineW: 2.2, label: "G" },   // G — wound copper
+  { color: "#D8D0FF", lineW: 0.8,  label: "e" },  // e  — plain steel (thinnest)
+  { color: "#FFD0A0", lineW: 1.2,  label: "B" },  // B  — plain steel (warm)
+  { color: "#FFB040", lineW: 1.8,  label: "G" },  // G  — wound bronze
+  { color: "#90D870", lineW: 2.4,  label: "D" },  // D  — wound nickel
+  { color: "#60B0FF", lineW: 3.0,  label: "A" },  // A  — wound (heavier)
+  { color: "#C080FF", lineW: 3.8,  label: "E" },  // E  — wound (thickest)
 ];
 
-// Note-circle fill colours (vivid, readable on dark wood)
+// Note-circle fill colours per string (vivid, readable on dark wood)
 const NOTE_COLORS = [
-  "#FF5E87", // e
-  "#FF9D3F", // B
-  "#FFD034", // G
+  "#C8A8FF", // e  (0) — soft violet
+  "#FF9D3F", // B  (1) — orange
+  "#FFD034", // G  (2) — gold
+  "#66CC88", // D  (3) — green
+  "#5599FF", // A  (4) — blue
+  "#AA77FF", // E  (5) — purple
 ];
 
 // ─── Beat-boundary helper ──────────────────────────────────────────────────────

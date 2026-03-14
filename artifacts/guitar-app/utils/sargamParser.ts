@@ -41,26 +41,50 @@ function semitoneKey(note: ParsedSargamNote): string {
 
 const STRING_MIDI_OPEN = [64, 59, 55, 50, 45, 40]; // E4 B3 G3 D3 A2 E2
 
-// C Major Cross-String Fingering — 5th position (G · B · e strings only)
-// Sa=C4  Re=D4  Ga=E4  Ma=F4  Pa=G4  Dha=A4  Ni=B4  Sa'=C5
-// Reference: "Sargam Fretboard — C Major, Sa = C · G string fret 5"
-// All entries are on strings G(2), B(1), e(0). Octave is conveyed by the
-// visual style (dashed = lower, solid = main, glow = upper), NOT by string.
-const GBE_POSITIONS: Record<number, { string: number; fret: number }> = {
-  60: { string: 2, fret: 5 }, // C4 /Sa   — G  fret 5
-  62: { string: 2, fret: 7 }, // D4 /Re   — G  fret 7
-  64: { string: 1, fret: 5 }, // E4 /Ga   — B  fret 5
-  65: { string: 1, fret: 6 }, // F4 /Ma   — B  fret 6
-  67: { string: 0, fret: 3 }, // G4 /Pa   — e  fret 3
-  69: { string: 0, fret: 5 }, // A4 /Dha  — e  fret 5
-  71: { string: 0, fret: 7 }, // B4 /Ni   — e  fret 7
-  72: { string: 0, fret: 8 }, // C5 /Sa'  — e  fret 8
+// ─── Full 6-string C Major cross-string position table ───────────────────────
+//
+// Reference: "Sargam Fretboard — C Major · All 6 Strings"
+//   Sa = C · Re = D · Ga = E · Ma = F · Pa = G · Dha = A · Ni = B
+//
+// String indices (0 = high e, 5 = low E):
+//   0 = e  (E4, open MIDI 64)
+//   1 = B  (B3, open MIDI 59)
+//   2 = G  (G3, open MIDI 55)
+//   3 = D  (D3, open MIDI 50)
+//   4 = A  (A2, open MIDI 45)
+//   5 = E  (E2, open MIDI 40)
+//
+// Lower octave run  (sa→Sa):  A fret 3 → D open → D fret 2 → D fret 3
+//                              → D fret 5 → G fret 2 → G fret 4 → G fret 5
+// Middle octave run (Sa→Sa'): G fret 5 → G fret 7 → B fret 5 → B fret 6
+//                              → e fret 3 → e fret 5 → e fret 7 → e fret 8
+
+const ALL_STRING_POSITIONS: Record<number, { string: number; fret: number }> = {
+  // ── Sub-bass (E string, used when sargam reaches below lower sa) ──────────
+  40: { string: 5, fret: 0 },  // E2 / ga₋₁  — E  open
+  43: { string: 5, fret: 3 },  // G2 / pa₋₁  — E  fret 3
+  45: { string: 4, fret: 0 },  // A2 / dha₋₁ — A  open
+  47: { string: 4, fret: 2 },  // B2 / ni₋₁  — A  fret 2
+  // ── Lower octave (sa–ni = C3–B3 = MIDI 48–59) — A / D / G strings ───────
+  48: { string: 4, fret: 3 },  // C3 / sa     — A  fret 3
+  50: { string: 3, fret: 0 },  // D3 / re     — D  open
+  52: { string: 3, fret: 2 },  // E3 / ga     — D  fret 2
+  53: { string: 3, fret: 3 },  // F3 / ma     — D  fret 3
+  55: { string: 3, fret: 5 },  // G3 / pa     — D  fret 5
+  57: { string: 2, fret: 2 },  // A3 / dha    — G  fret 2
+  59: { string: 2, fret: 4 },  // B3 / ni     — G  fret 4
+  // ── Middle octave (Sa–Sa' = C4–C5 = MIDI 60–72) — G / B / e strings ─────
+  60: { string: 2, fret: 5 },  // C4 / Sa     — G  fret 5  ← root
+  62: { string: 2, fret: 7 },  // D4 / Re     — G  fret 7
+  64: { string: 1, fret: 5 },  // E4 / Ga     — B  fret 5
+  65: { string: 1, fret: 6 },  // F4 / Ma     — B  fret 6
+  67: { string: 0, fret: 3 },  // G4 / Pa     — e  fret 3
+  69: { string: 0, fret: 5 },  // A4 / Dha    — e  fret 5
+  71: { string: 0, fret: 7 },  // B4 / Ni     — e  fret 7
+  72: { string: 0, fret: 8 },  // C5 / Sa'    — e  fret 8
 };
 
-// G·B·e open-string MIDI values (strings 0-2 only) — standard tuning, unchanged
-const GBE_OPEN_MIDI = [64, 59, 55]; // e, B, G
-
-// Sa = C4 (MIDI 60) — C Major cross-string fingering
+// Sa = C4 (MIDI 60) — C Major
 const DEFAULT_SA_MIDI = 60;
 
 function sargamNoteToMidi(note: ParsedSargamNote, saMidi: number): number {
@@ -69,31 +93,25 @@ function sargamNoteToMidi(note: ParsedSargamNote, saMidi: number): number {
   return saMidi + semiOffset + octaveOffset;
 }
 
-// SA_MIDI_MAIN = 60 (C4/Sa) is the lowest note in the main G·B·e octave.
-// SA_MIDI_HIGH = 72 (C5/Sa') is the highest.
-const SA_MIDI_MAIN = 60;
-const SA_MIDI_HIGH = 72;
-
 export function midiToGuitarPosition(midi: number): { string: number; fret: number } | null {
-  // Always stay on G·B·e strings — shift note into the main-octave range (60–72)
-  // before the lookup. Octave context (lower/upper) is shown via visual style.
+  // Direct lookup in the preferred cross-string position table
+  if (ALL_STRING_POSITIONS[midi]) return ALL_STRING_POSITIONS[midi];
+
+  // Shift out-of-range MIDI into the covered band (E2–C5, MIDI 40–84)
   let m = midi;
-  while (m < SA_MIDI_MAIN) m += 12;
-  while (m > SA_MIDI_HIGH) m -= 12;
+  while (m < 40) m += 12;
+  while (m > 84) m -= 12;
+  if (ALL_STRING_POSITIONS[m]) return ALL_STRING_POSITIONS[m];
 
-  // Look up in the G·B·e cross-string position table
-  if (GBE_POSITIONS[m]) return GBE_POSITIONS[m];
-
-  // Fallback for chromatic/non-scale tones: G·B·e strings only
-  let best: { string: number; fret: number; score: number } | null = null;
-  for (let si = 0; si < 3; si++) {
-    const fret = m - GBE_OPEN_MIDI[si];
+  // Chromatic / microtonal fallback: lowest available fret across all strings
+  let best: { string: number; fret: number } | null = null;
+  for (let si = 0; si < STRING_MIDI_OPEN.length; si++) {
+    const fret = m - STRING_MIDI_OPEN[si];
     if (fret >= 0 && fret <= 15) {
-      const score = fret;
-      if (!best || score < best.score) best = { string: si, fret, score };
+      if (!best || fret < best.fret) best = { string: si, fret };
     }
   }
-  return best ? { string: best.string, fret: best.fret } : null;
+  return best;
 }
 
 // ─── Tokenizer ────────────────────────────────────────────────────────────────
