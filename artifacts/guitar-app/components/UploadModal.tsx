@@ -42,6 +42,35 @@ maPa maGamaga SaSaGa GamaPa maPa maGamaga SaSaGa GamaPa maPa maGamaga Sa
 SaPama Pama GamaPa PaniPa maGagaSa SaPama Pama GamaPa PaniPa
 `;
 
+const DEMO_WESTERN = `Aakasham
+Part 1
+aakasham ye naatido
+C D D# C D C B G
+anuragam aanaatidi
+C D D# C D BC
+aavesham yenadu kaligenu
+E E F D D# D DCBC
+aanaade Telisindadi
+E E F DF D# DD
+Part 2
+ye puvvu ye tetaidannadi
+F F G F G A# G F
+ye muddu ye movidannadi
+F F G F G A# G F
+bandhalai penaveyu vayasuku
+F G A# F G A# BBC
+andaale daasohamanaga
+F G A# F G A# BBC
+paruvaale pranayalai
+B C D B C E
+swapnaale swargaalai
+B C D B C E
+ennenno shrungaara leelalu
+D# D B B C B A# A
+kannullo rangeli aladenu
+G# G E E F G D#DC
+`;
+
 const DEMO_TAB = `Title: Smoke on the Water
 Artist: Deep Purple
 
@@ -118,6 +147,12 @@ export default function UploadModal({ visible, onClose, onAdd }: Props) {
     setArtist("Nata Raag");
   };
 
+  const handleDemoWestern = () => {
+    setText(DEMO_WESTERN);
+    setTitle("Aakasham");
+    setArtist("");
+  };
+
   const handleSubmit = () => {
     if (!text.trim()) {
       Alert.alert("No content", "Please paste a guitar tab, sargam, or Western notation.");
@@ -164,7 +199,7 @@ export default function UploadModal({ visible, onClose, onAdd }: Props) {
           ]}
         >
           <Text style={[styles.headerTitle, { color: colors.text }]}>
-            Add Tab or Sargam
+            Add Tab / Notation
           </Text>
           <Pressable
             onPress={handleClose}
@@ -269,9 +304,14 @@ export default function UploadModal({ visible, onClose, onAdd }: Props) {
                 <Text
                   style={[styles.fieldLabel, { color: colors.textSecondary }]}
                 >
-                  Tab or Sargam Notation
+                  Tab / Sargam / Western Notation
                 </Text>
-                <View style={{ flexDirection: "row", gap: 12 }}>
+                <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
+                  <Pressable onPress={handleDemoWestern}>
+                    <Text style={[styles.demoLink, { color: colors.tint }]}>
+                      Western demo
+                    </Text>
+                  </Pressable>
                   <Pressable onPress={handleDemoSargam}>
                     <Text style={[styles.demoLink, { color: colors.tint }]}>
                       Sargam demo
@@ -287,7 +327,7 @@ export default function UploadModal({ visible, onClose, onAdd }: Props) {
               <TextInput
                 value={text}
                 onChangeText={setText}
-                placeholder={`Paste guitar tab:\ne|--0--2--3-|\nB|--1--3--0-|\n\nOr sargam notation:\nmaPa maGamaga SaSaga`}
+                placeholder={`Paste guitar tab, sargam, or Western notation:\n\nPart 1\nC D D# C D C B G\nE E F D D# D DCBC\n\nPart 2\nF F G F G A# G F`}
                 placeholderTextColor={colors.textMuted}
                 multiline
                 numberOfLines={12}
