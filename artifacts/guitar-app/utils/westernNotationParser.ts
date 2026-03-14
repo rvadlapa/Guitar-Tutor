@@ -157,8 +157,9 @@ export function parseWesternNotation(rawText: string, title?: string): TabSong {
       const noteNames = tokenizeChordToken(token);
       if (noteNames.length === 0) continue;
 
-      const guitarNotes: GuitarNote[] = [];
-      let chordLabel: string | undefined;
+      // Each note in a token is a subdivision of one beat (like sargam parser).
+      // duration = 1/N so N notes together fill exactly one beat.
+      const duration = 1 / noteNames.length;
 
       for (const noteName of noteNames) {
         const midi = noteToMidiNearest(noteName, prevMidi);
@@ -167,25 +168,18 @@ export function parseWesternNotation(rawText: string, title?: string): TabSong {
         const pos = midiToGuitarPosition(midi);
         if (!pos) continue;
 
-        guitarNotes.push({
-          string: pos.string,
-          fret: pos.fret === 0 ? "0" : pos.fret,
-          technique: "none",
-        });
-
-        // Label = sargam name of the first note in this chord token
-        if (!chordLabel) chordLabel = midiToSargamLabel(midi);
-
-        // Move anchor to this midi so the next note finds the nearest octave
-        prevMidi = midi;
-      }
-
-      if (guitarNotes.length > 0) {
         currentChords.push({
           id: generateId(),
-          notes: guitarNotes,
-          label: chordLabel,
+          notes: [{
+            string: pos.string,
+            fret: pos.fret === 0 ? "0" : pos.fret,
+            technique: "none",
+          }],
+          label: midiToSargamLabel(midi),
+          duration,
         });
+
+        prevMidi = midi;
       }
     }
   }
@@ -202,24 +196,25 @@ export function parseWesternNotation(rawText: string, title?: string): TabSong {
       const noteNames = tokenizeChordToken(token);
       if (noteNames.length === 0) continue;
 
-      const guitarNotes: GuitarNote[] = [];
-      let label: string | undefined;
+      const duration = 1 / noteNames.length;
 
       for (const name of noteNames) {
         const midi = noteToMidiNearest(name, anchor);
         if (midi < 0) continue;
         const pos = midiToGuitarPosition(midi);
         if (!pos) continue;
-        guitarNotes.push({
-          string: pos.string,
-          fret: pos.fret === 0 ? "0" : pos.fret,
-          technique: "none",
+        chords.push({
+          id: generateId(),
+          notes: [{
+            string: pos.string,
+            fret: pos.fret === 0 ? "0" : pos.fret,
+            technique: "none",
+          }],
+          label: midiToSargamLabel(midi),
+          duration,
         });
-        if (!label) label = midiToSargamLabel(midi);
         anchor = midi;
       }
-
-      if (guitarNotes.length > 0) chords.push({ id: generateId(), notes: guitarNotes, label });
     }
 
     if (chords.length > 0) sections.push({ id: generateId(), name: "Main", chords });
