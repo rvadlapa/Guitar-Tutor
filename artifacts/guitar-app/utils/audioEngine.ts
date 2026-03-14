@@ -13,7 +13,8 @@ function getFretFrequency(stringIndex: number, fret: number | "x" | "0"): number
   return OPEN_STRING_FREQS[stringIndex] * Math.pow(2, fretNum / 12);
 }
 
-// ─── Web Audio API (Browser / Expo Web) ───────────────────────────────────────
+// ─── Karplus-Strong Plucked String (Web Audio API) ────────────────────────────
+// Simulates a guitar string by exciting a delay-line with filtered noise.
 
 let webAudioCtx: AudioContext | null = null;
 
@@ -30,95 +31,70 @@ function getWebAudioContext(): AudioContext | null {
   return webAudioCtx;
 }
 
-function playWebNote(frequency: number, delaySeconds: number = 0): void {
-  const ctx = getWebAudioContext();
-  if (!ctx || frequency <= 0) return;
+function buildKarplusStrongBuffer(ctx: AudioContext, frequency: number): AudioBuffer {
+  const sampleRate = ctx.sampleRate;
+  const duration = 2.2; // seconds of string ring
+  const totalSamples = Math.floor(sampleRate * duration);
 
-  const now = ctx.currentTime + delaySeconds;
-  const duration = 1.8;
+  // Delay line length determines pitch
+  const delayLength = Math.max(2, Math.round(sampleRate / frequency));
 
-  // Master gain
-  const masterGain = ctx.createGain();
-  masterGain.gain.setValueAtTime(0.18, now);
-  masterGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
-  masterGain.connect(ctx.destination);
+  const audioBuffer = ctx.createBuffer(1, totalSamples, sampleRate);
+  const data = audioBuffer.getChannelData(0);
 
-  // Body resonance with a biquad filter (guitar body EQ)
-  const bodyFilter = ctx.createBiquadFilter();
-  bodyFilter.type = "peaking";
-  bodyFilter.frequency.value = 220;
-  bodyFilter.gain.value = 6;
-  bodyFilter.Q.value = 1.2;
-  bodyFilter.connect(masterGain);
+  // Seed the delay line with band-limited noise (pick attack)
+  const delayLine = new Float32Array(delayLength);
+  for (let i = 0; i < delayLength; i++) {
+    delayLine[i] = Math.random() * 2 - 1;
+  }
 
-  // High cut - guitar strings don't have harsh highs
+  // Run Karplus-Strong: each sample = average of two adjacent delay-line values
+  // The averaging is a one-pole low-pass filter → simulates string damping
+  // Stretch factor (0.4995 < 0.5) controls decay speed
+  const stretch = 0.4978;
+  let idx = 0;
+  for (let i = 0; i < totalSamples; i++) {
+    const next = (idx + 1) % delayLength;
+    data[i] = delayLine[idx];
+    delayLine[idx] = stretch * (delayLine[idx] + delayLine[next]);
+    idx = next;
+  }
+
+  return audioBuffer;
+}
+
+function playWebNote(ctx: AudioContext, frequency: number, delaySeconds: number): void {
+  if (frequency <= 0) return;
+
+  const buffer = buildKarplusStrongBuffer(ctx, frequency);
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+
+  // Mild body EQ — guitars have a resonance around 200-400 Hz
+  const bodyEq = ctx.createBiquadFilter();
+  bodyEq.type = "peaking";
+  bodyEq.frequency.value = 300;
+  bodyEq.gain.value = 4;
+  bodyEq.Q.value = 0.9;
+
+  // High-cut to remove unrealistic upper harmonics
   const highCut = ctx.createBiquadFilter();
   highCut.type = "lowpass";
-  highCut.frequency.value = 3000;
-  highCut.Q.value = 0.5;
-  highCut.connect(bodyFilter);
+  highCut.frequency.value = 4500;
 
-  // Fundamental oscillator (main pitch)
-  const osc1 = ctx.createOscillator();
-  osc1.type = "sawtooth";
-  osc1.frequency.setValueAtTime(frequency, now);
-  // Slight pitch envelope (string attack)
-  osc1.frequency.setValueAtTime(frequency * 1.002, now);
-  osc1.frequency.exponentialRampToValueAtTime(frequency, now + 0.05);
+  // Master volume with slight fade-out at tail
+  const gain = ctx.createGain();
+  const startTime = ctx.currentTime + delaySeconds;
+  gain.gain.setValueAtTime(0.55, startTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, startTime + 2.0);
 
-  const osc1Gain = ctx.createGain();
-  osc1Gain.gain.setValueAtTime(0.6, now);
-  osc1Gain.gain.exponentialRampToValueAtTime(0.001, now + duration * 0.9);
-  osc1.connect(osc1Gain);
-  osc1Gain.connect(highCut);
+  source.connect(bodyEq);
+  bodyEq.connect(highCut);
+  highCut.connect(gain);
+  gain.connect(ctx.destination);
 
-  // Second harmonic (adds warmth)
-  const osc2 = ctx.createOscillator();
-  osc2.type = "triangle";
-  osc2.frequency.value = frequency * 2;
-  const osc2Gain = ctx.createGain();
-  osc2Gain.gain.setValueAtTime(0.2, now);
-  osc2Gain.gain.exponentialRampToValueAtTime(0.001, now + duration * 0.5);
-  osc2.connect(osc2Gain);
-  osc2Gain.connect(highCut);
-
-  // Third harmonic (brightness)
-  const osc3 = ctx.createOscillator();
-  osc3.type = "triangle";
-  osc3.frequency.value = frequency * 3;
-  const osc3Gain = ctx.createGain();
-  osc3Gain.gain.setValueAtTime(0.08, now);
-  osc3Gain.gain.exponentialRampToValueAtTime(0.001, now + duration * 0.3);
-  osc3.connect(osc3Gain);
-  osc3Gain.connect(highCut);
-
-  // Attack transient (pick noise)
-  const noiseBuffer = ctx.createBuffer(1, ctx.sampleRate * 0.03, ctx.sampleRate);
-  const noiseData = noiseBuffer.getChannelData(0);
-  for (let i = 0; i < noiseData.length; i++) {
-    noiseData[i] = Math.random() * 2 - 1;
-  }
-  const noiseSource = ctx.createBufferSource();
-  noiseSource.buffer = noiseBuffer;
-  const noiseFilter = ctx.createBiquadFilter();
-  noiseFilter.type = "bandpass";
-  noiseFilter.frequency.value = frequency * 2;
-  noiseFilter.Q.value = 3;
-  const noiseGain = ctx.createGain();
-  noiseGain.gain.setValueAtTime(0.15, now);
-  noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
-  noiseSource.connect(noiseFilter);
-  noiseFilter.connect(noiseGain);
-  noiseGain.connect(masterGain);
-
-  osc1.start(now);
-  osc2.start(now);
-  osc3.start(now);
-  noiseSource.start(now);
-
-  osc1.stop(now + duration);
-  osc2.stop(now + duration);
-  osc3.stop(now + duration);
+  source.start(startTime);
+  source.stop(startTime + 2.2);
 }
 
 export function playWebChord(notes: GuitarNote[]): void {
@@ -126,18 +102,15 @@ export function playWebChord(notes: GuitarNote[]): void {
   if (!ctx) return;
 
   const playable = notes.filter((n) => n.fret !== "x");
-
   playable.forEach((note, i) => {
     const freq = getFretFrequency(note.string, note.fret);
     if (freq > 0) {
-      // Slight strum delay between strings (arpeggio effect)
-      const delayMs = i * 18;
-      playWebNote(freq, delayMs / 1000);
+      playWebNote(ctx, freq, i * 0.014); // slight strum delay
     }
   });
 }
 
-// ─── Native Audio (iOS / Android) via expo-av ─────────────────────────────────
+// ─── Karplus-Strong WAV Generator (Native / expo-av) ─────────────────────────
 
 let audioSessionConfigured = false;
 
@@ -154,10 +127,29 @@ async function ensureAudioSession(): Promise<void> {
   } catch {}
 }
 
-// Generate a simple pluck-like WAV tone as base64
-function generateWavBase64(frequency: number, durationMs: number = 1200): string {
+function generateKarplusStrongWav(frequency: number): string {
   const sampleRate = 22050;
+  const durationMs = 2000;
   const numSamples = Math.floor((sampleRate * durationMs) / 1000);
+
+  // Karplus-Strong delay line
+  const delayLength = Math.max(2, Math.round(sampleRate / frequency));
+  const delayLine = new Float32Array(delayLength);
+  for (let i = 0; i < delayLength; i++) {
+    delayLine[i] = Math.random() * 2 - 1;
+  }
+
+  const samples = new Float32Array(numSamples);
+  const stretch = 0.4978;
+  let idx = 0;
+  for (let i = 0; i < numSamples; i++) {
+    const next = (idx + 1) % delayLength;
+    samples[i] = delayLine[idx];
+    delayLine[idx] = stretch * (delayLine[idx] + delayLine[next]);
+    idx = next;
+  }
+
+  // Pack into 16-bit PCM WAV
   const numChannels = 1;
   const bitsPerSample = 16;
   const blockAlign = (numChannels * bitsPerSample) / 8;
@@ -167,17 +159,14 @@ function generateWavBase64(frequency: number, durationMs: number = 1200): string
 
   const buffer = new ArrayBuffer(fileSize);
   const view = new DataView(buffer);
-
-  const writeString = (offset: number, str: string) => {
-    for (let i = 0; i < str.length; i++) {
-      view.setUint8(offset + i, str.charCodeAt(i));
-    }
+  const ws = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
   };
 
-  writeString(0, "RIFF");
+  ws(0, "RIFF");
   view.setUint32(4, fileSize - 8, true);
-  writeString(8, "WAVE");
-  writeString(12, "fmt ");
+  ws(8, "WAVE");
+  ws(12, "fmt ");
   view.setUint32(16, 16, true);
   view.setUint16(20, 1, true);
   view.setUint16(22, numChannels, true);
@@ -185,34 +174,14 @@ function generateWavBase64(frequency: number, durationMs: number = 1200): string
   view.setUint32(28, byteRate, true);
   view.setUint16(32, blockAlign, true);
   view.setUint16(34, bitsPerSample, true);
-  writeString(36, "data");
+  ws(36, "data");
   view.setUint32(40, dataSize, true);
 
-  const omega = (2 * Math.PI * frequency) / sampleRate;
-
   for (let i = 0; i < numSamples; i++) {
-    const t = i / sampleRate;
-    const decay = Math.exp(-t * 4.5);
-
-    // Plucked string waveform: fundamental + harmonics, fast attack decay
-    let sample =
-      decay *
-      (0.5 * Math.sin(omega * i) +
-        0.25 * Math.sin(2 * omega * i) +
-        0.12 * Math.sin(3 * omega * i) +
-        0.06 * Math.sin(4 * omega * i));
-
-    // Add tiny noise burst at start for pick attack
-    if (i < sampleRate * 0.015) {
-      const pickEnv = Math.exp((-i / sampleRate) * 300);
-      sample += pickEnv * (Math.random() * 0.1 - 0.05);
-    }
-
-    const pcm = Math.max(-1, Math.min(1, sample));
+    const pcm = Math.max(-1, Math.min(1, samples[i]));
     view.setInt16(44 + i * 2, pcm * 32767, true);
   }
 
-  // Convert to base64
   let binary = "";
   const bytes = new Uint8Array(buffer);
   for (let i = 0; i < bytes.length; i++) {
@@ -223,32 +192,25 @@ function generateWavBase64(frequency: number, durationMs: number = 1200): string
 
 const soundCache = new Map<string, Audio.Sound>();
 
-async function playNativeNote(
-  stringIndex: number,
-  fret: number | "x" | "0"
-): Promise<void> {
+async function playNativeNote(stringIndex: number, fret: number | "x" | "0"): Promise<void> {
   if (fret === "x") return;
   const freq = getFretFrequency(stringIndex, fret);
   if (freq <= 0) return;
 
-  const cacheKey = `${stringIndex}_${fret}`;
-
+  const cacheKey = `ks_${stringIndex}_${fret}`;
   try {
     await ensureAudioSession();
 
     let sound = soundCache.get(cacheKey);
-
     if (!sound) {
-      const wavB64 = generateWavBase64(freq, 1400);
-      const uri = `${FileSystem.cacheDirectory}guitar_${cacheKey}.wav`;
-
+      const wavB64 = generateKarplusStrongWav(freq);
+      const uri = `${FileSystem.cacheDirectory}guitar_ks_${cacheKey}.wav`;
       await FileSystem.writeAsStringAsync(uri, wavB64, {
         encoding: FileSystem.EncodingType.Base64,
       });
-
       const { sound: newSound } = await Audio.Sound.createAsync(
         { uri },
-        { shouldPlay: false, volume: 0.7 }
+        { shouldPlay: false, volume: 0.8 }
       );
       soundCache.set(cacheKey, newSound);
       sound = newSound;
@@ -257,7 +219,6 @@ async function playNativeNote(
     await sound.setPositionAsync(0);
     await sound.playAsync();
   } catch (err) {
-    // Silently fail - audio is optional enhancement
     console.warn("Audio playback error:", err);
   }
 }
@@ -265,12 +226,8 @@ async function playNativeNote(
 export async function playNativeChord(notes: GuitarNote[]): Promise<void> {
   const playable = notes.filter((n) => n.fret !== "x");
   for (let i = 0; i < playable.length; i++) {
-    const note = playable[i];
-    // Small stagger for strum feel
-    if (i > 0) {
-      await new Promise((r) => setTimeout(r, 16));
-    }
-    playNativeNote(note.string, note.fret);
+    if (i > 0) await new Promise((r) => setTimeout(r, 14));
+    playNativeNote(playable[i].string, playable[i].fret);
   }
 }
 
