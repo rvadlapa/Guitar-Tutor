@@ -14,7 +14,7 @@ const NUM_STRINGS   = 3;          // e · B · G only
 const LANE_HEIGHT   = 76;         // px per string lane
 const NOTE_SIZE     = 50;         // circle diameter
 const CHORD_WIDTH   = 80;         // px per full beat
-const LABEL_WIDTH   = 56;         // left label column width
+const LABEL_WIDTH   = 44;         // left label column width
 export const HIGHWAY_HEIGHT = LANE_HEIGHT * NUM_STRINGS; // 228
 
 // Window of chords to mount around the playhead
@@ -24,8 +24,6 @@ const LOOK_BEHIND = 4;
 // Only the three strings we use (index matches note.string from parser)
 // Guitar string numbers: 1 = high e (thinnest), 2 = B, 3 = G
 const STRING_NAMES = ["e", "B", "G"];
-const STRING_NUMBERS = ["1", "2", "3"]; // standard guitar numbering
-
 // String visual properties: colour, line thickness
 const STRING_META = [
   { color: "#E8E8F0", lineW: 1.0, label: "e" },   // e — plain steel, thinnest
@@ -121,18 +119,6 @@ function NoteHighwayInner({ chords, currentIndex, isPlaying, bpm }: Props) {
       <View style={styles.labelCol} pointerEvents="none">
         {STRING_NAMES.map((name, si) => (
           <View key={si} style={[styles.labelCell, { height: LANE_HEIGHT }]}>
-            {/* String number badge */}
-            <View
-              style={[
-                styles.stringNumBadge,
-                { borderColor: STRING_META[si].color },
-              ]}
-            >
-              <Text style={[styles.stringNumText, { color: STRING_META[si].color }]}>
-                {STRING_NUMBERS[si]}
-              </Text>
-            </View>
-            {/* String name */}
             <Text style={[styles.labelText, { color: STRING_META[si].color }]}>
               {name}
             </Text>
@@ -259,19 +245,23 @@ function NoteHighwayInner({ chords, currentIndex, isPlaying, bpm }: Props) {
                           styles.noteLabel,
                           {
                             color:    isPast ? "rgba(255,255,255,0.3)" : "#FFF",
-                            fontSize: label.length > 3 ? 11 : 13,
+                            fontSize: label.length > 3 ? 10 : 12,
                           },
                         ]}
                         numberOfLines={1}
                       >
                         {label}
                       </Text>
-                      {/* Fret number subscript */}
+                      {/* Fret number — shown on all visible notes */}
                       {!isPast && (
                         <Text
                           style={[
                             styles.fretSub,
-                            { color: hexToRgba(color, isActive ? 0.9 : 0.6) },
+                            {
+                              color:    isActive ? "#FFF" : hexToRgba(color, 0.85),
+                              fontSize: isActive ? 13 : 11,
+                              fontWeight: isActive ? "900" : "700",
+                            },
                           ]}
                         >
                           {fretNum}
@@ -328,19 +318,6 @@ const styles = StyleSheet.create({
     alignItems:     "center",
     justifyContent: "center",
     gap:            6,
-  },
-  stringNumBadge: {
-    width:        22,
-    height:       22,
-    borderRadius: 11,
-    borderWidth:  1.5,
-    alignItems:     "center",
-    justifyContent: "center",
-  },
-  stringNumText: {
-    fontSize:   11,
-    fontWeight: "800",
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
   },
   labelText: {
     fontSize:    11,
@@ -413,11 +390,9 @@ const styles = StyleSheet.create({
     marginTop:    2,
   },
   fretSub: {
-    fontSize:   9,
-    fontWeight: "600",
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    lineHeight: 11,
-    marginTop:  1,
+    lineHeight: 14,
+    marginTop:  0,
   },
 
   // ── Playhead ──────────────────────────────────────────────────────────────────
