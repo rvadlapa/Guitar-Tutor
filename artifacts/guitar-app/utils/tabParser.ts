@@ -19,32 +19,28 @@ function getStringIndex(label: string): number {
   }
 }
 
-// Detect if a line looks like a guitar tab line (has a string label at start)
-function isTabLine(line: string): { isTab: boolean; stringIndex: number; content: string } {
-  // Match: optional whitespace, string label, separator (|, :, >, -, =, space), then tab content
+// Detect if a line looks like a guitar tab line (has a string label at start).
+// stringIndex of -1 with kind === "E" means the label is "E" (uppercase) and
+// could be either high or low — the block gatherer disambiguates by position.
+type TabLineCheck =
+  | { isTab: false }
+  | { isTab: true; stringIndex: number; content: string }
+  | { isTab: true; stringIndex: -1; kind: "E"; content: string };
+
+function isTabLine(line: string): TabLineCheck {
   const match = line.match(/^\s*([eEBGDAb])\s*[|:>\-=]?\s*([-\d|xhbpvs/\\~\s]+)$/i);
-  if (!match) return { isTab: false, stringIndex: -1, content: "" };
+  if (!match) return { isTab: false };
 
   const labelChar = match[1];
   const content = match[2];
 
-  // Distinguish high e (lowercase) vs low E (uppercase)
-  let stringIndex = -1;
-  if (labelChar === "e") {
-    stringIndex = 0; // high e (lowercase)
-  } else if (labelChar === "E") {
-    stringIndex = 5; // low E (uppercase)
-  } else if (labelChar === "B" || labelChar === "b") {
-    stringIndex = 1;
-  } else if (labelChar === "G") {
-    stringIndex = 2;
-  } else if (labelChar === "D") {
-    stringIndex = 3;
-  } else if (labelChar === "A") {
-    stringIndex = 4;
-  }
-
-  return { isTab: stringIndex !== -1, stringIndex, content };
+  if (labelChar === "e") return { isTab: true, stringIndex: 0, content }; // high e
+  if (labelChar === "E") return { isTab: true, stringIndex: -1, kind: "E", content };
+  if (labelChar === "B" || labelChar === "b") return { isTab: true, stringIndex: 1, content };
+  if (labelChar === "G") return { isTab: true, stringIndex: 2, content };
+  if (labelChar === "D") return { isTab: true, stringIndex: 3, content };
+  if (labelChar === "A") return { isTab: true, stringIndex: 4, content };
+  return { isTab: false };
 }
 
 // Extract technique marker from surrounding context
@@ -154,9 +150,9 @@ export function parseGuitarTab(rawText: string, title?: string): TabSong {
       continue;
     }
 
-    const sectionKeywords = /^(verse|chorus|bridge|intro|outro|solo|pre-chorus|refrain|riff)/i;
+    const sectionKeywords = /^(verse|chorus|bridge|intro|outro|solo|pre-chorus|refrain|riff|section|part)\b/i;
     if (sectionKeywords.test(line.trim())) {
-      sectionName = line.trim();
+      sectionName = line.trim().replace(/:$/, "");
       i++;
       continue;
     }
@@ -168,24 +164,44 @@ export function parseGuitarTab(rawText: string, title?: string): TabSong {
       continue;
     }
 
-    // Gather consecutive tab lines into a block
-    // A block can contain lines for the same 6 strings; if we see the same
-    // string index twice, that's a new block.
+    // Gather consecutive tab lines into a block. A block can contain lines for
+    // the same 6 strings; if we see the same string index twice, that's a new
+    // block. "E" (uppercase) is ambiguous — the first occurrence is high-e,
+    // the second is low-E. Lowercase "e" always means high-e.
     const lineMap = new Map<number, string>();
+    let pendingE: string | null = null; // first "E" line seen, awaiting disambiguation
     let j = i;
 
     while (j < lines.length) {
       const candidate = lines[j].trimEnd();
-      if (!candidate.trim()) break; // blank line ends block
+      if (!candidate.trim()) break;
 
       const check = isTabLine(candidate);
       if (!check.isTab) break;
 
-      // If this string index already added, we've hit a repeat → end block
-      if (lineMap.has(check.stringIndex)) break;
+      if ("kind" in check && check.kind === "E") {
+        if (pendingE === null) {
+          // First E — defer; could be high-e or the only E in this block (low E).
+          pendingE = check.content;
+        } else {
+          // Second E in this block: pending was high-e, current is low-E.
+          if (lineMap.has(0) || lineMap.has(5)) break;
+          lineMap.set(0, pendingE);
+          lineMap.set(5, check.content);
+          pendingE = null;
+        }
+        j++;
+        continue;
+      }
 
+      if (lineMap.has(check.stringIndex)) break;
       lineMap.set(check.stringIndex, check.content);
       j++;
+    }
+
+    // If we only saw one "E" line, treat it as high-e (top of block).
+    if (pendingE !== null && !lineMap.has(0)) {
+      lineMap.set(0, pendingE);
     }
 
     // Need at least 3 recognized strings to form a valid block

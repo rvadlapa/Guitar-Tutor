@@ -15,6 +15,7 @@ import GuitarNeck from "@/components/GuitarNeck";
 import PlaybackControls from "@/components/PlaybackControls";
 import SpeedControl from "@/components/SpeedControl";
 import TabProgressBar from "@/components/TabProgressBar";
+import UpcomingNotes from "@/components/UpcomingNotes";
 import UploadModal from "@/components/UploadModal";
 import Colors from "@/constants/colors";
 import { useTabContext, TabSong } from "@/context/TabContext";
@@ -290,6 +291,13 @@ export default function PlayerScreen() {
           </View>
         )}
 
+        {/* Upcoming notes preview */}
+        {allChords.length > 0 && (
+          <View style={styles.upcomingSection}>
+            <UpcomingNotes chords={allChords} currentIndex={currentChordIndex} />
+          </View>
+        )}
+
         {/* Progress bar */}
         {allChords.length > 0 && (
           <View style={styles.progressSection}>
@@ -495,6 +503,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+  },
+  upcomingSection: {
+    marginTop: 4,
   },
   progressSection: {
     marginTop: 4,

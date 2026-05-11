@@ -30,12 +30,16 @@ function getWebAudioContext(): AudioContext | null {
   return webAudioCtx;
 }
 
-function playWebNote(frequency: number, delaySeconds: number = 0): void {
+function playWebNote(
+  frequency: number,
+  delaySeconds: number = 0,
+  durationSeconds: number = 1.8
+): void {
   const ctx = getWebAudioContext();
   if (!ctx || frequency <= 0) return;
 
   const now = ctx.currentTime + delaySeconds;
-  const duration = 1.8;
+  const duration = Math.max(0.08, durationSeconds);
 
   // Master gain
   const masterGain = ctx.createGain();
@@ -121,7 +125,7 @@ function playWebNote(frequency: number, delaySeconds: number = 0): void {
   osc3.stop(now + duration);
 }
 
-export function playWebChord(notes: GuitarNote[]): void {
+export function playWebChord(notes: GuitarNote[], durationSeconds?: number): void {
   const ctx = getWebAudioContext();
   if (!ctx) return;
 
@@ -132,7 +136,7 @@ export function playWebChord(notes: GuitarNote[]): void {
     if (freq > 0) {
       // Slight strum delay between strings (arpeggio effect)
       const delayMs = i * 18;
-      playWebNote(freq, delayMs / 1000);
+      playWebNote(freq, delayMs / 1000, durationSeconds);
     }
   });
 }
@@ -222,10 +226,30 @@ function generateWavBase64(frequency: number, durationMs: number = 1200): string
 }
 
 const soundCache = new Map<string, Audio.Sound>();
+// Sounds currently ringing. Stopped before the next chord starts so notes
+// don't overlap when BPM is faster than the WAV's natural decay.
+const activeSounds = new Set<Audio.Sound>();
+// Timers that will pause sounds after the BPM-derived duration.
+const pendingStops = new Set<ReturnType<typeof setTimeout>>();
+
+function clearPendingStops(): void {
+  pendingStops.forEach((t) => clearTimeout(t));
+  pendingStops.clear();
+}
+
+async function silenceActiveSounds(): Promise<void> {
+  clearPendingStops();
+  const sounds = Array.from(activeSounds);
+  activeSounds.clear();
+  await Promise.all(
+    sounds.map((s) => s.pauseAsync().catch(() => {}))
+  );
+}
 
 async function playNativeNote(
   stringIndex: number,
-  fret: number | "x" | "0"
+  fret: number | "x" | "0",
+  durationSeconds: number
 ): Promise<void> {
   if (fret === "x") return;
   const freq = getFretFrequency(stringIndex, fret);
@@ -256,13 +280,26 @@ async function playNativeNote(
 
     await sound.setPositionAsync(0);
     await sound.playAsync();
+
+    activeSounds.add(sound);
+    const stopTimer = setTimeout(() => {
+      pendingStops.delete(stopTimer);
+      activeSounds.delete(sound!);
+      sound!.pauseAsync().catch(() => {});
+    }, Math.max(80, durationSeconds * 1000));
+    pendingStops.add(stopTimer);
   } catch (err) {
     // Silently fail - audio is optional enhancement
     console.warn("Audio playback error:", err);
   }
 }
 
-export async function playNativeChord(notes: GuitarNote[]): Promise<void> {
+export async function playNativeChord(
+  notes: GuitarNote[],
+  durationSeconds: number = 1.4
+): Promise<void> {
+  await silenceActiveSounds();
+
   const playable = notes.filter((n) => n.fret !== "x");
   for (let i = 0; i < playable.length; i++) {
     const note = playable[i];
@@ -270,22 +307,27 @@ export async function playNativeChord(notes: GuitarNote[]): Promise<void> {
     if (i > 0) {
       await new Promise((r) => setTimeout(r, 16));
     }
-    playNativeNote(note.string, note.fret);
+    playNativeNote(note.string, note.fret, durationSeconds);
   }
 }
 
 // ─── Unified API ──────────────────────────────────────────────────────────────
 
-export async function playChord(notes: GuitarNote[]): Promise<void> {
+export async function playChord(
+  notes: GuitarNote[],
+  durationSeconds?: number
+): Promise<void> {
   if (notes.length === 0) return;
   if (Platform.OS === "web") {
-    playWebChord(notes);
+    playWebChord(notes, durationSeconds);
   } else {
-    await playNativeChord(notes);
+    await playNativeChord(notes, durationSeconds);
   }
 }
 
 export function disposeAudio(): void {
+  clearPendingStops();
+  activeSounds.clear();
   soundCache.forEach((sound) => {
     sound.unloadAsync().catch(() => {});
   });

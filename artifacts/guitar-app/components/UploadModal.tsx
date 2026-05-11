@@ -1,8 +1,8 @@
 import { Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system";
 import * as Haptics from "expo-haptics";
 import React, { useState } from "react";
+import { extractFileText } from "@/utils/fileExtractor";
 import {
   ActivityIndicator,
   Alert,
@@ -61,6 +61,42 @@ A|--3--3--5---3--5-6-5---3--5--6--5--3-|
 E|-------------------------------------|
 `;
 
+const DEMO_DURANDHAR = `Title: Gehra Hua
+Artist: Durandhar
+
+SECTION 1
+E|---------------------5-6-5------------------------5-6-5------------------------|
+B|8-6-8-6-8-----6-8---------8-6-5-6-5-6------8------8-6----------------------6---|
+G|------------------------------------------8-7-8-7-5-----------------8-7--------|
+D|--------------------------------------------------------8-7-7-8----------------|
+A|-------------------------------------------------------------------------------|
+E|-------------------------------------------------------------------------------|
+
+SECTION 2
+E|---------------------5-6-5------------------------5---6-5----------------------|
+B|8-6-8-6-8-----6-8---------8-6-5-6-5-6------8------8-6----------------------6---|
+G|------------------------------------------8-7-8-7-5-----------------8-7--------|
+D|--------------------------------------------------------8-7-7-8----------------|
+A|-------------------------------------------------------------------------------|
+E|-------------------------------------------------------------------------------|
+
+SECTION 3
+E|---------8-----8---8--11-10-8-------------------------------------------------|
+B|-8-10-11---------10--------------11-10--11--10-11--10-11----------------------|
+G|------------------------------------------------------------------------------|
+D|------------------------------------------------------------------------------|
+A|------------------------------------------------------------------------------|
+E|------------------------------------------------------------------------------|
+
+SECTION 4
+E|-10-13-10-13/15---10--13\\15-10-13-10-8---10\\13-10-8----8-10------------------|
+B|-----------------------------------------------------11------11-10------------|
+G|------------------------------------------------------------------------------|
+D|------------------------------------------------------------------------------|
+A|------------------------------------------------------------------------------|
+E|------------------------------------------------------------------------------|
+`;
+
 export default function UploadModal({ visible, onClose, onAdd }: Props) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
@@ -71,6 +107,7 @@ export default function UploadModal({ visible, onClose, onAdd }: Props) {
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"paste" | "upload">("paste");
 
   const handleClose = () => {
@@ -84,24 +121,50 @@ export default function UploadModal({ visible, onClose, onAdd }: Props) {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       const result = await DocumentPicker.getDocumentAsync({
-        type: ["text/plain", "text/*", "application/octet-stream"],
+        type: [
+          "text/plain",
+          "text/*",
+          "application/pdf",
+          "image/*",
+          "application/octet-stream",
+        ],
         copyToCacheDirectory: true,
       });
 
       if (result.canceled || !result.assets?.[0]) return;
 
       setLoading(true);
+      setProgress("Reading file");
       const asset = result.assets[0];
-      const content = await FileSystem.readAsStringAsync(asset.uri);
+      const extracted = await extractFileText(
+        { uri: asset.uri, name: asset.name, mimeType: asset.mimeType },
+        (stage, percent) => {
+          setProgress(percent != null ? `${stage} (${percent}%)` : stage);
+        }
+      );
+
+      const content = extracted.text;
+      if (!content.trim()) {
+        Alert.alert(
+          "Nothing extracted",
+          extracted.source === "image"
+            ? "Couldn't read any text from this image. Try a clearer photo or paste the tab manually."
+            : "The file appears to be empty."
+        );
+        return;
+      }
+
       setText(content);
 
       const meta = extractSongMeta(content);
       if (meta.title && !title) setTitle(meta.title);
       if (meta.artist && !artist) setArtist(meta.artist || "");
     } catch (err) {
-      Alert.alert("Error", "Could not read file. Try pasting the tab text.");
+      const message = err instanceof Error ? err.message : "Could not read file.";
+      Alert.alert("Error", message);
     } finally {
       setLoading(false);
+      setProgress(null);
     }
   };
 
@@ -115,6 +178,12 @@ export default function UploadModal({ visible, onClose, onAdd }: Props) {
     setText(DEMO_SARGAM);
     setTitle("Maha Ganapatim");
     setArtist("Nata Raag");
+  };
+
+  const handleDemoDurandhar = () => {
+    setText(DEMO_DURANDHAR);
+    setTitle("Gehra Hua");
+    setArtist("Durandhar");
   };
 
   const handleSubmit = () => {
@@ -271,12 +340,17 @@ export default function UploadModal({ visible, onClose, onAdd }: Props) {
                 <View style={{ flexDirection: "row", gap: 12 }}>
                   <Pressable onPress={handleDemoSargam}>
                     <Text style={[styles.demoLink, { color: colors.tint }]}>
-                      Sargam demo
+                      Sargam
                     </Text>
                   </Pressable>
                   <Pressable onPress={handleDemo}>
                     <Text style={[styles.demoLink, { color: colors.tint }]}>
-                      Tab demo
+                      Tab
+                    </Text>
+                  </Pressable>
+                  <Pressable onPress={handleDemoDurandhar}>
+                    <Text style={[styles.demoLink, { color: colors.tint }]}>
+                      Durandhar
                     </Text>
                   </Pressable>
                 </View>
@@ -314,7 +388,14 @@ export default function UploadModal({ visible, onClose, onAdd }: Props) {
               ]}
             >
               {loading ? (
-                <ActivityIndicator color={colors.tint} />
+                <>
+                  <ActivityIndicator color={colors.tint} />
+                  {progress && (
+                    <Text style={[styles.uploadSubtitle, { color: colors.textMuted }]}>
+                      {progress}
+                    </Text>
+                  )}
+                </>
               ) : text ? (
                 <>
                   <Feather name="check-circle" size={32} color={colors.tint} />
@@ -333,7 +414,7 @@ export default function UploadModal({ visible, onClose, onAdd }: Props) {
                   <Text
                     style={[styles.uploadTitle, { color: colors.text }]}
                   >
-                    Choose a .txt file
+                    Choose a file
                   </Text>
                   <Text
                     style={[
@@ -341,7 +422,7 @@ export default function UploadModal({ visible, onClose, onAdd }: Props) {
                       { color: colors.textMuted },
                     ]}
                   >
-                    Upload a plain text guitar tab file
+                    Text, PDF, or image (web only for PDF/image)
                   </Text>
                 </>
               )}

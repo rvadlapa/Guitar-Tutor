@@ -95,7 +95,10 @@ export function TabProvider({ children }: { children: React.ReactNode }) {
     const chord = allChords[currentChordIndex];
     if (!chord) return;
     if (audioEnabledRef.current && chord.notes.length > 0) {
-      playChord(chord.notes).catch(() => {});
+      // Note duration = beat length minus a tiny gap, so notes don't overlap.
+      const beatSeconds = 60 / bpmRef.current;
+      const noteDuration = Math.max(0.1, beatSeconds * 0.95);
+      playChord(chord.notes, noteDuration).catch(() => {});
     }
     if (voiceEnabledRef.current && chord.label) {
       speakLabel(chord.label).catch(() => {});
