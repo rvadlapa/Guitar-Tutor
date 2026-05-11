@@ -20,11 +20,11 @@ type Props = {
   compact?: boolean;
 };
 
-export default function GuitarNeck({ chord, tuning, compact = false }: Props) {
+function GuitarNeckInner({ chord, tuning, compact = false }: Props) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const fadeAnim = useRef(new Animated.Value(1)).current;
 
   const stringColors = [
     colors.string1,
@@ -37,11 +37,10 @@ export default function GuitarNeck({ chord, tuning, compact = false }: Props) {
 
   useEffect(() => {
     if (!chord) return;
-    pulseAnim.setValue(0.85);
-    Animated.spring(pulseAnim, {
+    fadeAnim.setValue(0.75);
+    Animated.timing(fadeAnim, {
       toValue: 1,
-      friction: 6,
-      tension: 200,
+      duration: 120,
       useNativeDriver: true,
     }).start();
   }, [chord]);
@@ -72,7 +71,7 @@ export default function GuitarNeck({ chord, tuning, compact = false }: Props) {
   const totalWidth = FRET_WIDTH * visibleFrets + 50;
 
   return (
-    <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+    <Animated.View style={{ opacity: fadeAnim }}>
       <View
         style={[
           styles.container,
@@ -164,7 +163,7 @@ export default function GuitarNeck({ chord, tuning, compact = false }: Props) {
               </View>
 
               {/* Fret cells */}
-              {displayFrets.map((fret, fi) => {
+              {displayFrets.map((fret) => {
                 const isActive =
                   note &&
                   typeof note.fret === "number" &&
@@ -249,6 +248,9 @@ export default function GuitarNeck({ chord, tuning, compact = false }: Props) {
     </Animated.View>
   );
 }
+
+const GuitarNeck = React.memo(GuitarNeckInner);
+export default GuitarNeck;
 
 const styles = StyleSheet.create({
   container: {

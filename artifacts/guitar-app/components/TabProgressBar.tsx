@@ -1,5 +1,5 @@
 import * as Haptics from "expo-haptics";
-import React, { useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import {
   Pressable,
   ScrollView,
@@ -17,18 +17,27 @@ type Props = {
   onSeek: (index: number) => void;
 };
 
-export default function TabProgressBar({ chords, currentIndex, onSeek }: Props) {
+const CELL_W = 32;
+const CELL_GAP = 6;
+
+function TabProgressBarInner({ chords, currentIndex, onSeek }: Props) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const scrollRef = useRef<ScrollView>(null);
 
+  useEffect(() => {
+    if (!scrollRef.current) return;
+    const isSargam = chords[currentIndex]?.label;
+    const cellWidth = isSargam ? 38 : CELL_W;
+    const x = Math.max(0, currentIndex * (cellWidth + CELL_GAP) - 100);
+    scrollRef.current.scrollTo({ x, animated: true });
+  }, [currentIndex]);
+
   const handlePress = (index: number) => {
     Haptics.selectionAsync();
     onSeek(index);
   };
-
-  const CELL_W = 32;
 
   return (
     <View>
@@ -40,14 +49,6 @@ export default function TabProgressBar({ chords, currentIndex, onSeek }: Props) 
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
-        onLayout={() => {
-          if (scrollRef.current) {
-            scrollRef.current.scrollTo({
-              x: Math.max(0, currentIndex * (CELL_W + 6) - 100),
-              animated: true,
-            });
-          }
-        }}
       >
         {chords.map((chord, index) => {
           const isActive = index === currentIndex;
@@ -63,7 +64,8 @@ export default function TabProgressBar({ chords, currentIndex, onSeek }: Props) 
             : maxFret > 0
             ? String(maxFret)
             : "○";
-          const isSargamUpper = isSargam && chord.label![0] === chord.label![0].toUpperCase();
+          const isSargamUpper =
+            isSargam && chord.label![0] === chord.label![0].toUpperCase();
 
           return (
             <Pressable
@@ -74,7 +76,11 @@ export default function TabProgressBar({ chords, currentIndex, onSeek }: Props) 
                 {
                   width: isSargam ? 38 : CELL_W,
                   backgroundColor: isActive
-                    ? isSargam ? (isSargamUpper ? "#C17A2A" : "#8B4513") : colors.tint
+                    ? isSargam
+                      ? isSargamUpper
+                        ? "#C17A2A"
+                        : "#8B4513"
+                      : colors.tint
                     : isPast
                     ? isDark
                       ? "#2A2218"
@@ -83,9 +89,13 @@ export default function TabProgressBar({ chords, currentIndex, onSeek }: Props) 
                     ? "#1E1810"
                     : "#F5F0E8",
                   borderColor: isActive
-                    ? isSargam ? (isSargamUpper ? "#C17A2A" : "#8B4513") : colors.tint
+                    ? isSargam
+                      ? isSargamUpper
+                        ? "#C17A2A"
+                        : "#8B4513"
+                      : colors.tint
                     : colors.border,
-                  transform: [{ scale: pressed ? 0.9 : isActive ? 1.1 : 1 }],
+                  transform: [{ scale: pressed ? 0.9 : isActive ? 1.08 : 1 }],
                   opacity: isPast ? 0.5 : 1,
                 },
               ]}
@@ -101,7 +111,8 @@ export default function TabProgressBar({ chords, currentIndex, onSeek }: Props) 
                       : colors.textSecondary,
                     fontWeight: isActive ? "700" : "400",
                     fontSize: isSargam ? 10 : maxFret > 9 ? 9 : 11,
-                    fontStyle: isSargam && !isSargamUpper ? "italic" : "normal",
+                    fontStyle:
+                      isSargam && !isSargamUpper ? "italic" : "normal",
                   },
                 ]}
               >
@@ -115,6 +126,9 @@ export default function TabProgressBar({ chords, currentIndex, onSeek }: Props) 
   );
 }
 
+const TabProgressBar = React.memo(TabProgressBarInner);
+export default TabProgressBar;
+
 const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 11,
@@ -124,7 +138,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 4,
-    gap: 6,
+    gap: CELL_GAP,
     flexDirection: "row",
     alignItems: "center",
   },

@@ -8,24 +8,207 @@ import {
   StyleSheet,
   Text,
   View,
-  useColorScheme,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import GuitarNeck from "@/components/GuitarNeck";
+import NoteHighway, { HIGHWAY_HEIGHT } from "@/components/NoteHighway";
 import PlaybackControls from "@/components/PlaybackControls";
 import SpeedControl from "@/components/SpeedControl";
 import TabProgressBar from "@/components/TabProgressBar";
 import UpcomingNotes from "@/components/UpcomingNotes";
 import UploadModal from "@/components/UploadModal";
-import Colors from "@/constants/colors";
-import { useTabContext, TabSong } from "@/context/TabContext";
+import { useTabContext, TabSong, GuitarNote } from "@/context/TabContext";
 
+// ─── Mini current-chord info bar ─────────────────────────────────────────────
+const ChordInfoBar = React.memo(function ChordInfoBar({
+  label,
+  notes,
+  index,
+  total,
+}: {
+  label?: string;
+  notes: GuitarNote[];
+  index: number;
+  total: number;
+}) {
+  const NOTE_COLORS = [
+    "#FF5E87","#FF8C36","#EDD030","#45D68A","#4DA6FF","#B06EFF",
+  ];
+  const STRING_NAMES = ["e", "B", "G", "D", "A", "E"];
+
+  const activeNotes = notes.filter((n) => n.fret !== "x");
+
+  return (
+    <View style={infoStyles.row}>
+      {/* Label badge (sargam / Western) */}
+      {label ? (
+        <View style={infoStyles.labelBadge}>
+          <Text style={infoStyles.labelText}>{label}</Text>
+        </View>
+      ) : null}
+
+      {/* Per-string fret pills */}
+      <View style={infoStyles.pills}>
+        {activeNotes.map((n, i) => (
+          <View
+            key={i}
+            style={[
+              infoStyles.pill,
+              { backgroundColor: NOTE_COLORS[n.string] + "33",
+                borderColor: NOTE_COLORS[n.string] + "88" },
+            ]}
+          >
+            <Text style={[infoStyles.pillString, { color: NOTE_COLORS[n.string] }]}>
+              {STRING_NAMES[n.string]}
+            </Text>
+            <Text style={infoStyles.pillFret}>
+              {n.fret === "0" ? "○" : String(n.fret)}
+            </Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Position */}
+      <Text style={infoStyles.position}>
+        {index + 1}/{total}
+      </Text>
+    </View>
+  );
+});
+
+const infoStyles = StyleSheet.create({
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 4,
+    minHeight: 36,
+  },
+  labelBadge: {
+    backgroundColor: "rgba(232,135,42,0.2)",
+    borderWidth: 1,
+    borderColor: "rgba(232,135,42,0.5)",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  labelText: {
+    color: "#FFB347",
+    fontWeight: "700",
+    fontSize: 14,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+  },
+  pills: {
+    flexDirection: "row",
+    gap: 4,
+    flex: 1,
+    flexWrap: "wrap",
+  },
+  pill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  pillString: {
+    fontSize: 10,
+    fontWeight: "700",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+  },
+  pillFret: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "rgba(255,255,255,0.8)",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+  },
+  position: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.3)",
+    fontWeight: "600",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+  },
+});
+
+// ─── Empty state ──────────────────────────────────────────────────────────────
+const EmptyHighway = React.memo(function EmptyHighway({
+  onLoad,
+}: {
+  onLoad: () => void;
+}) {
+  return (
+    <View style={[emptyStyles.container, { height: HIGHWAY_HEIGHT }]}>
+      <Feather name="music" size={36} color="rgba(190,150,60,0.4)" />
+      <Text style={emptyStyles.title}>No tab loaded</Text>
+      <Text style={emptyStyles.subtitle}>
+        Load a guitar tab, sargam, or Western notation to start
+      </Text>
+      <Pressable
+        onPress={onLoad}
+        style={({ pressed }) => [
+          emptyStyles.btn,
+          { opacity: pressed ? 0.8 : 1 },
+        ]}
+      >
+        <Feather name="plus" size={16} color="#FFF" />
+        <Text style={emptyStyles.btnText}>Load Tab</Text>
+      </Pressable>
+    </View>
+  );
+});
+
+const emptyStyles = StyleSheet.create({
+  container: {
+    backgroundColor: "#0C1420",
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    borderWidth: 1,
+    borderColor: "rgba(190,150,60,0.2)",
+  },
+  title: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  subtitle: {
+    color: "rgba(255,255,255,0.25)",
+    fontSize: 13,
+    textAlign: "center",
+    paddingHorizontal: 32,
+  },
+  btn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#E8872A",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginTop: 4,
+  },
+  btnText: {
+    color: "#FFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+});
+
+// ─── Player screen ────────────────────────────────────────────────────────────
 export default function PlayerScreen() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
-  const colors = isDark ? Colors.dark : Colors.light;
   const insets = useSafeAreaInsets();
-  const { currentSong, currentChordIndex, addSong, loadSong, seekToChord } = useTabContext();
+  const {
+    currentSong,
+    currentChordIndex,
+    isPlaying,
+    bpm,
+    addSong,
+    loadSong,
+    seekToChord,
+  } = useTabContext();
+
   const [showUpload, setShowUpload] = useState(false);
   const [showSpeed, setShowSpeed] = useState(false);
 
@@ -36,58 +219,28 @@ export default function PlayerScreen() {
 
   const currentChord = allChords[currentChordIndex] ?? null;
 
-  const currentSection = useMemo(() => {
-    if (!currentSong) return null;
-    let count = 0;
-    for (const section of currentSong.sections) {
-      if (count + section.chords.length > currentChordIndex) {
-        return section;
-      }
-      count += section.chords.length;
-    }
-    return currentSong.sections[currentSong.sections.length - 1];
-  }, [currentSong, currentChordIndex]);
-
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
   return (
-    <View
-      style={[styles.container, { backgroundColor: colors.background }]}
-    >
-      {/* Header */}
-      <View
-        style={[
-          styles.header,
-          {
-            paddingTop: topPad + 12,
-            borderBottomColor: colors.border,
-            backgroundColor: colors.background,
-          },
-        ]}
-      >
+    <View style={styles.container}>
+      {/* ── Header ───────────────────────────────────────────────── */}
+      <View style={[styles.header, { paddingTop: topPad + 10 }]}>
         <View style={styles.headerLeft}>
-          <Text style={[styles.appName, { color: colors.tint }]}>
-            GuitarTab
-          </Text>
+          <Text style={styles.appName}>GuitarTab</Text>
           {currentSong ? (
-            <View>
-              <Text style={[styles.songTitle, { color: colors.text }]} numberOfLines={1}>
+            <View style={{ gap: 1 }}>
+              <Text style={styles.songTitle} numberOfLines={1}>
                 {currentSong.title}
               </Text>
-              {currentSong.artist && (
-                <Text
-                  style={[styles.artistName, { color: colors.textSecondary }]}
-                  numberOfLines={1}
-                >
+              {currentSong.artist ? (
+                <Text style={styles.artistName} numberOfLines={1}>
                   {currentSong.artist}
                 </Text>
-              )}
+              ) : null}
             </View>
           ) : (
-            <Text style={[styles.songTitle, { color: colors.textMuted }]}>
-              No song loaded
-            </Text>
+            <Text style={styles.noSong}>No song loaded</Text>
           )}
         </View>
 
@@ -101,194 +254,67 @@ export default function PlayerScreen() {
               styles.iconBtn,
               {
                 backgroundColor: showSpeed
-                  ? colors.tint
-                  : isDark
-                  ? "#2A2218"
-                  : "#F0EAE0",
+                  ? "#E8872A"
+                  : "rgba(255,255,255,0.08)",
                 opacity: pressed ? 0.7 : 1,
               },
             ]}
           >
             <Feather
               name="sliders"
-              size={18}
-              color={showSpeed ? "#fff" : colors.textSecondary}
+              size={17}
+              color={showSpeed ? "#FFF" : "rgba(255,255,255,0.55)"}
             />
           </Pressable>
 
           <Pressable
             onPress={() => setShowUpload(true)}
             style={({ pressed }) => [
-              styles.uploadBtn,
-              {
-                backgroundColor: colors.tint,
-                opacity: pressed ? 0.85 : 1,
-              },
+              styles.loadBtn,
+              { opacity: pressed ? 0.85 : 1 },
             ]}
           >
-            <Feather name="plus" size={16} color="#fff" />
-            <Text style={styles.uploadBtnText}>Load Tab</Text>
+            <Feather name="plus" size={15} color="#FFF" />
+            <Text style={styles.loadBtnText}>Load Tab</Text>
           </Pressable>
         </View>
       </View>
 
+      {/* ── Main scroll area ─────────────────────────────────────── */}
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: bottomPad + 100 },
+          { paddingBottom: bottomPad + 90 },
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Speed control panel */}
         {showSpeed && (
           <View style={styles.speedPanel}>
             <SpeedControl />
           </View>
         )}
 
-        {/* Section label */}
-        {currentSection && (
-          <View style={styles.sectionBadge}>
-            <Text style={[styles.sectionBadgeText, { color: colors.tint }]}>
-              {currentSection.name}
-            </Text>
-          </View>
-        )}
-
-        {/* Guitar Neck */}
-        {currentChord ? (
-          <View style={styles.neckContainer}>
-            {/* Sargam note badge */}
-            {currentChord.label && (
-              <View style={styles.sargamBadgeRow}>
-                <View
-                  style={[
-                    styles.sargamBadge,
-                    {
-                      backgroundColor:
-                        currentChord.label[0] === currentChord.label[0].toUpperCase()
-                          ? isDark ? "#7A4A10" : "#C17A2A"
-                          : isDark ? "#4A2A10" : "#8B4513",
-                    },
-                  ]}
-                >
-                  <Text style={styles.sargamBadgeNote}>{currentChord.label}</Text>
-                </View>
-                <Text style={[styles.sargamBadgeHint, { color: colors.textSecondary }]}>
-                  {currentChord.label[0] === currentChord.label[0].toUpperCase()
-                    ? "Shuddha"
-                    : "Komal"}
-                </Text>
-              </View>
-            )}
-
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.neckScroll}
-            >
-              <GuitarNeck
-                chord={currentChord}
-                tuning={currentSong?.tuning}
-              />
-            </ScrollView>
-
-            {/* Technique badge */}
-            {currentChord.notes.some((n) => n.technique && n.technique !== "none") && (
-              <View style={styles.techniqueBadges}>
-                {Array.from(
-                  new Set(
-                    currentChord.notes
-                      .filter((n) => n.technique && n.technique !== "none")
-                      .map((n) => n.technique)
-                  )
-                ).map((tech) => (
-                  <View
-                    key={tech}
-                    style={[
-                      styles.techBadge,
-                      { backgroundColor: isDark ? "#2A2218" : "#F0EAE0" },
-                    ]}
-                  >
-                    <Text
-                      style={[styles.techBadgeText, { color: colors.tint }]}
-                    >
-                      {tech}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            )}
-          </View>
+        {/* Note highway */}
+        {currentSong && allChords.length > 0 ? (
+          <NoteHighway
+            chords={allChords}
+            currentIndex={currentChordIndex}
+            isPlaying={isPlaying}
+            bpm={bpm}
+          />
         ) : (
-          <View
-            style={[
-              styles.emptyNeck,
-              {
-                backgroundColor: isDark ? colors.card : "#FFFFFF",
-                borderColor: colors.border,
-              },
-            ]}
-          >
-            <Feather name="music" size={40} color={colors.border} />
-            <Text style={[styles.emptyTitle, { color: colors.textSecondary }]}>
-              No tab loaded
-            </Text>
-            <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
-              Load a guitar tab to start practicing
-            </Text>
-            <Pressable
-              onPress={() => setShowUpload(true)}
-              style={({ pressed }) => [
-                styles.emptyBtn,
-                { backgroundColor: colors.tint, opacity: pressed ? 0.85 : 1 },
-              ]}
-            >
-              <Text style={styles.emptyBtnText}>Load Tab</Text>
-            </Pressable>
-          </View>
+          <EmptyHighway onLoad={() => setShowUpload(true)} />
         )}
 
-        {/* String legend */}
+        {/* Current chord info */}
         {currentChord && (
-          <View style={styles.stringLegend}>
-            {(currentSong?.tuning ?? ["e", "B", "G", "D", "A", "E"]).map(
-              (note, si) => {
-                const stringColors = [
-                  colors.string1,
-                  colors.string2,
-                  colors.string3,
-                  colors.string4,
-                  colors.string5,
-                  colors.string6,
-                ];
-                const chordNote = currentChord.notes.find(
-                  (n) => n.string === si
-                );
-                return (
-                  <View key={si} style={styles.legendItem}>
-                    <View
-                      style={[
-                        styles.legendDot,
-                        { backgroundColor: stringColors[si] },
-                      ]}
-                    />
-                    <Text
-                      style={[styles.legendNote, { color: colors.textSecondary }]}
-                    >
-                      {note}
-                    </Text>
-                    <Text
-                      style={[styles.legendFret, { color: colors.text }]}
-                    >
-                      {chordNote ? String(chordNote.fret) : "—"}
-                    </Text>
-                  </View>
-                );
-              }
-            )}
-          </View>
+          <ChordInfoBar
+            label={currentChord.label}
+            notes={currentChord.notes}
+            index={currentChordIndex}
+            total={allChords.length}
+          />
         )}
 
         {/* Upcoming notes preview */}
@@ -298,7 +324,7 @@ export default function PlayerScreen() {
           </View>
         )}
 
-        {/* Progress bar */}
+        {/* Sequence progress bar */}
         {allChords.length > 0 && (
           <View style={styles.progressSection}>
             <TabProgressBar
@@ -331,33 +357,43 @@ export default function PlayerScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: "#0A1018",
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-end",
-    paddingHorizontal: 20,
+    paddingHorizontal: 18,
     paddingBottom: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 12,
+    borderBottomColor: "rgba(255,255,255,0.07)",
+    gap: 10,
   },
   headerLeft: {
     flex: 1,
     gap: 2,
   },
   appName: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "700",
-    letterSpacing: 2,
+    letterSpacing: 2.5,
     textTransform: "uppercase",
+    color: "#E8872A",
     marginBottom: 2,
   },
   songTitle: {
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: "700",
+    color: "#F0EAE0",
   },
   artistName: {
-    fontSize: 14,
+    fontSize: 13,
+    color: "rgba(240,234,224,0.5)",
+  },
+  noSong: {
+    fontSize: 17,
+    color: "rgba(255,255,255,0.2)",
+    fontWeight: "500",
   },
   headerRight: {
     flexDirection: "row",
@@ -365,152 +401,33 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   iconBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
   },
-  uploadBtn: {
+  loadBtn: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 14,
-    height: 38,
-    borderRadius: 19,
-    gap: 6,
+    gap: 5,
+    backgroundColor: "#E8872A",
+    paddingHorizontal: 13,
+    height: 36,
+    borderRadius: 18,
   },
-  uploadBtnText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "600",
+  loadBtnText: {
+    color: "#FFF",
+    fontSize: 13,
+    fontWeight: "700",
   },
-  scroll: {
-    flex: 1,
-  },
+  scroll: { flex: 1 },
   scrollContent: {
-    padding: 16,
-    gap: 16,
+    padding: 14,
+    gap: 14,
   },
-  speedPanel: {
-    marginBottom: 4,
-  },
-  sectionBadge: {
-    alignSelf: "flex-start",
-  },
-  sectionBadgeText: {
-    fontSize: 13,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-  },
-  neckContainer: {
-    gap: 10,
-  },
-  sargamBadgeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  sargamBadge: {
-    paddingHorizontal: 18,
-    paddingVertical: 8,
-    borderRadius: 12,
-  },
-  sargamBadgeNote: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#fff",
-    letterSpacing: 1,
-  },
-  sargamBadgeHint: {
-    fontSize: 13,
-    fontStyle: "italic",
-  },
-  neckScroll: {
-    paddingHorizontal: 4,
-  },
-  techniqueBadges: {
-    flexDirection: "row",
-    gap: 8,
-    flexWrap: "wrap",
-  },
-  techBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 20,
-  },
-  techBadgeText: {
-    fontSize: 12,
-    fontWeight: "600",
-    textTransform: "capitalize",
-  },
-  emptyNeck: {
-    height: 280,
-    borderRadius: 20,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 12,
-    ...Platform.select({
-      ios: {
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06,
-        shadowRadius: 8,
-      },
-      android: { elevation: 2 },
-    }),
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    textAlign: "center",
-    paddingHorizontal: 40,
-  },
-  emptyBtn: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 14,
-    marginTop: 4,
-  },
-  emptyBtnText: {
-    color: "#fff",
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  stringLegend: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    paddingHorizontal: 8,
-  },
-  legendItem: {
-    alignItems: "center",
-    gap: 4,
-  },
-  legendDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  legendNote: {
-    fontSize: 11,
-    fontWeight: "600",
-  },
-  legendFret: {
-    fontSize: 13,
-    fontWeight: "700",
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-  },
-  upcomingSection: {
-    marginTop: 4,
-  },
-  progressSection: {
-    marginTop: 4,
-  },
-  controlsSection: {
-    marginTop: 4,
-  },
+  speedPanel: { marginBottom: 2 },
+  upcomingSection: {},
+  progressSection: {},
+  controlsSection: {},
 });

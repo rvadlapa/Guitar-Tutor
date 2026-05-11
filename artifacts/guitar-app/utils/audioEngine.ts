@@ -1,10 +1,17 @@
 import { Audio } from "expo-av";
 import { Platform } from "react-native";
-import * as FileSystem from "expo-file-system";
 import { GuitarNote } from "@/context/TabContext";
 
-// Standard tuning open string frequencies (Hz)
-// Strings ordered: e(high), B, G, D, A, E(low) -> indices 0-5
+// ─── Instrument type ──────────────────────────────────────────────────────────
+
+export type InstrumentType = "acoustic" | "electric";
+
+let currentInstrument: InstrumentType = "acoustic";
+export function setInstrument(inst: InstrumentType): void { currentInstrument = inst; }
+export function getInstrument(): InstrumentType { return currentInstrument; }
+
+// ─── Frequency helpers ────────────────────────────────────────────────────────
+
 const OPEN_STRING_FREQS = [329.63, 246.94, 196.0, 146.83, 110.0, 82.41];
 
 function getFretFrequency(stringIndex: number, fret: number | "x" | "0"): number {
@@ -13,138 +20,279 @@ function getFretFrequency(stringIndex: number, fret: number | "x" | "0"): number
   return OPEN_STRING_FREQS[stringIndex] * Math.pow(2, fretNum / 12);
 }
 
-// ─── Web Audio API (Browser / Expo Web) ───────────────────────────────────────
+// ─── ACOUSTIC GUITAR — Karplus-Strong with triangular pluck excitation ────────
+//
+// A real string is displaced into a triangle shape by the pick/finger, then
+// released. This gives the correct 1/n² harmonic rolloff. Pluck position
+// (~15% from bridge) creates a comb notch — every ~7th harmonic is suppressed.
+// The warmth filter in the feedback loop models the acoustic body absorbing
+// high frequencies faster on bass strings than treble.
 
-let webAudioCtx: AudioContext | null = null;
+function generateAcoustic(sr: number, freq: number, si: number, dur: number): Float32Array {
+  const N        = Math.floor(sr * dur);
+  const P        = Math.max(2, Math.round(sr / freq));
+  const buf      = new Float32Array(P);
+  const pluckPos = 0.14 + si * 0.018; // near bridge; shifts slightly per string
 
-function getWebAudioContext(): AudioContext | null {
-  if (typeof AudioContext === "undefined" && typeof (window as any).webkitAudioContext === "undefined") {
-    return null;
+  for (let i = 0; i < P; i++) {
+    const phase = i / P;
+    // Triangular displacement (60%) + noise pick texture (40%)
+    const tri = phase < pluckPos
+      ? phase / pluckPos
+      : (1.0 - phase) / (1.0 - pluckPos);
+    buf[i] = tri * 0.60 + (Math.random() * 2 - 1) * 0.40;
   }
-  if (!webAudioCtx || webAudioCtx.state === "closed") {
-    webAudioCtx = new (AudioContext || (window as any).webkitAudioContext)();
+
+  // Warmth lowpass: bass strings absorb highs faster → warmer tone
+  const w = 0.09 + (5 - si) * 0.065;
+  for (let i = 1; i < P; i++) buf[i] = buf[i] * (1 - w) + buf[i - 1] * w;
+
+  // Treble strings sustain a little longer than bass
+  const decay = 0.9944 + (5 - si) * 0.00055;
+  const out   = new Float32Array(N);
+  let ptr = 0;
+  for (let i = 0; i < N; i++) {
+    const nxt = (ptr + 1) % P;
+    out[i]    = buf[ptr];
+    buf[ptr]  = 0.5 * (buf[ptr] + buf[nxt]) * decay;
+    ptr       = nxt;
   }
-  if (webAudioCtx.state === "suspended") {
-    webAudioCtx.resume();
+  return out;
+}
+
+// ─── ELECTRIC GUITAR — Karplus-Strong tuned for solid-body character ──────────
+//
+// Key differences from acoustic:
+//
+//   • Brighter seed — solid body doesn't absorb highs, so treble content
+//     survives much longer. Minimal warmth filter in the seed.
+//
+//   • Longer sustain — electric pickups sense string velocity with almost no
+//     energy loss, so the decay is slower (closer to 1.0). This gives the
+//     characteristic "singing" sustain.
+//
+//   • Pick transient — a very short (3 ms) band-limited noise burst at the
+//     attack models the pick scraping the string. This is what makes the
+//     front of an electric note sound sharp and defined rather than soft.
+//
+//   • Mid-range presence — a gentle all-pass comb in the initial seed
+//     boosts the 800–2000 Hz range that electric pickups emphasise,
+//     giving that nasal "quack" of single-coil pickups.
+
+function generateElectric(sr: number, freq: number, si: number, dur: number): Float32Array {
+  const N   = Math.floor(sr * dur);
+  const P   = Math.max(2, Math.round(sr / freq));
+  const buf = new Float32Array(P);
+
+  // Pick transient: 3ms burst of bandpass noise (800–3000 Hz)
+  const pickLen = Math.floor(sr * 0.003);
+  let lpPick = 0;
+  const cpA = 1 - Math.exp(-2 * Math.PI *  800 / sr);
+  const cpB = 1 - Math.exp(-2 * Math.PI * 3000 / sr);
+  let lpA = 0, lpB = 0;
+  for (let i = 0; i < pickLen && i < P; i++) {
+    const n = Math.random() * 2 - 1;
+    lpA += cpA * (n - lpA);
+    lpB += cpB * (n - lpB);
+    buf[i] += (lpB - lpA) * Math.exp(-i / (sr * 0.0008)) * 0.55;
+    lpPick = lpB;
   }
-  return webAudioCtx;
+
+  // Triangular pluck excitation — same concept as acoustic but mixed differently
+  const pluckPos = 0.12; // tighter toward bridge → brighter, more midrange
+  for (let i = 0; i < P; i++) {
+    const phase = i / P;
+    const tri   = phase < pluckPos
+      ? phase / pluckPos
+      : (1.0 - phase) / (1.0 - pluckPos);
+    buf[i] += tri * 0.55 + (Math.random() * 2 - 1) * 0.22;
+  }
+
+  // Very slight warmth on bass strings only (high strings stay bright)
+  const w = Math.max(0, (5 - si) * 0.012);
+  if (w > 0) {
+    for (let i = 1; i < P; i++) buf[i] = buf[i] * (1 - w) + buf[i - 1] * w;
+  }
+
+  // Longer decay → more sustain; electric strings ring much longer
+  const decay = 0.9968 + (5 - si) * 0.00038;
+  const out   = new Float32Array(N);
+  let ptr = 0;
+  for (let i = 0; i < N; i++) {
+    const nxt = (ptr + 1) % P;
+    out[i]    = buf[ptr];
+    buf[ptr]  = 0.5 * (buf[ptr] + buf[nxt]) * decay;
+    ptr       = nxt;
+  }
+  return out;
+}
+
+// ─── PCM dispatch ─────────────────────────────────────────────────────────────
+
+function generatePCM(
+  sr: number, freq: number, si: number, dur: number, inst: InstrumentType,
+): Float32Array {
+  switch (inst) {
+    case "acoustic": return generateAcoustic(sr, freq, si, dur);
+    case "electric": return generateElectric(sr, freq, si, dur);
+  }
+}
+
+// ─── Web Audio context ────────────────────────────────────────────────────────
+
+let webCtx: AudioContext | null = null;
+
+function getCtx(): AudioContext | null {
+  if (typeof AudioContext === "undefined" && !(window as any).webkitAudioContext) return null;
+  if (!webCtx || webCtx.state === "closed") {
+    const Ctor = typeof AudioContext !== "undefined" ? AudioContext : (window as any).webkitAudioContext;
+    webCtx = new Ctor();
+  }
+  if (webCtx.state === "suspended") webCtx.resume();
+  return webCtx;
+}
+
+// ─── Master processing chain (no reverb — clean, direct signal) ───────────────
+//
+// acoustic: warm low-mid boost + gentle high cut → compressor
+// electric: presence peak at 1.8 kHz + high cut → compressor
+// Both go through a soft compressor to keep levels consistent.
+
+let acousticChain: GainNode | null = null;
+let electricChain: GainNode | null = null;
+
+function buildChain(ctx: AudioContext, inst: InstrumentType): GainNode {
+  const input = ctx.createGain();
+  input.gain.value = 1.0;
+
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -14;
+  comp.knee.value      = 6;
+  comp.ratio.value     = 4.0;
+  comp.attack.value    = 0.003;
+  comp.release.value   = 0.12;
+
+  if (inst === "acoustic") {
+    // Warm low-mid body boost
+    const body = ctx.createBiquadFilter();
+    body.type          = "peaking";
+    body.frequency.value = 160;
+    body.gain.value    = 3.5;
+    body.Q.value       = 0.8;
+
+    // Gentle high cut (acoustic body rolls off above 6 kHz)
+    const hicut = ctx.createBiquadFilter();
+    hicut.type          = "lowpass";
+    hicut.frequency.value = 6200;
+    hicut.Q.value       = 0.6;
+
+    input.connect(body);
+    body.connect(hicut);
+    hicut.connect(comp);
+  } else {
+    // Presence/attack peak — the signature electric mid-range bite
+    const presence = ctx.createBiquadFilter();
+    presence.type          = "peaking";
+    presence.frequency.value = 1800;
+    presence.gain.value    = 4.0;
+    presence.Q.value       = 1.2;
+
+    // Tight high cut (single-coil pickups roll off above 5 kHz)
+    const hicut = ctx.createBiquadFilter();
+    hicut.type          = "lowpass";
+    hicut.frequency.value = 5000;
+    hicut.Q.value       = 0.65;
+
+    input.connect(presence);
+    presence.connect(hicut);
+    hicut.connect(comp);
+  }
+
+  comp.connect(ctx.destination);
+  return input;
+}
+
+function getChain(ctx: AudioContext, inst: InstrumentType): GainNode {
+  if (inst === "acoustic") {
+    if (!acousticChain) acousticChain = buildChain(ctx, "acoustic");
+    return acousticChain;
+  } else {
+    if (!electricChain) electricChain = buildChain(ctx, "electric");
+    return electricChain;
+  }
+}
+
+// ─── Buffer cache keyed by (instrument, stringIndex, frequency) ───────────────
+
+const webCache = new Map<string, AudioBuffer>();
+
+function getBuffer(ctx: AudioContext, freq: number, si: number, inst: InstrumentType): AudioBuffer {
+  const key    = `${inst}:${si}:${freq.toFixed(2)}`;
+  const cached = webCache.get(key);
+  if (cached) return cached;
+  const pcm = generatePCM(ctx.sampleRate, freq, si, 3.8, inst);
+  const ab  = ctx.createBuffer(1, pcm.length, ctx.sampleRate);
+  ab.copyToChannel(pcm, 0);
+  webCache.set(key, ab);
+  return ab;
 }
 
 function playWebNote(
-  frequency: number,
-  delaySeconds: number = 0,
-  durationSeconds: number = 1.8
+  ctx: AudioContext, freq: number, si: number, delaySeconds: number, inst: InstrumentType,
 ): void {
-  const ctx = getWebAudioContext();
-  if (!ctx || frequency <= 0) return;
+  const t0    = ctx.currentTime + delaySeconds;
+  const chain = getChain(ctx, inst);
+  const ab    = getBuffer(ctx, freq, si, inst);
+  const src   = ctx.createBufferSource();
+  src.buffer  = ab;
 
-  const now = ctx.currentTime + delaySeconds;
-  const duration = Math.max(0.08, durationSeconds);
+  const gain = ctx.createGain();
+  // Bass strings slightly louder; electric a touch hotter
+  gain.gain.value = inst === "electric"
+    ? 0.58 + si * 0.038
+    : 0.52 + si * 0.040;
 
-  // Master gain
-  const masterGain = ctx.createGain();
-  masterGain.gain.setValueAtTime(0.18, now);
-  masterGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
-  masterGain.connect(ctx.destination);
-
-  // Body resonance with a biquad filter (guitar body EQ)
-  const bodyFilter = ctx.createBiquadFilter();
-  bodyFilter.type = "peaking";
-  bodyFilter.frequency.value = 220;
-  bodyFilter.gain.value = 6;
-  bodyFilter.Q.value = 1.2;
-  bodyFilter.connect(masterGain);
-
-  // High cut - guitar strings don't have harsh highs
-  const highCut = ctx.createBiquadFilter();
-  highCut.type = "lowpass";
-  highCut.frequency.value = 3000;
-  highCut.Q.value = 0.5;
-  highCut.connect(bodyFilter);
-
-  // Fundamental oscillator (main pitch)
-  const osc1 = ctx.createOscillator();
-  osc1.type = "sawtooth";
-  osc1.frequency.setValueAtTime(frequency, now);
-  // Slight pitch envelope (string attack)
-  osc1.frequency.setValueAtTime(frequency * 1.002, now);
-  osc1.frequency.exponentialRampToValueAtTime(frequency, now + 0.05);
-
-  const osc1Gain = ctx.createGain();
-  osc1Gain.gain.setValueAtTime(0.6, now);
-  osc1Gain.gain.exponentialRampToValueAtTime(0.001, now + duration * 0.9);
-  osc1.connect(osc1Gain);
-  osc1Gain.connect(highCut);
-
-  // Second harmonic (adds warmth)
-  const osc2 = ctx.createOscillator();
-  osc2.type = "triangle";
-  osc2.frequency.value = frequency * 2;
-  const osc2Gain = ctx.createGain();
-  osc2Gain.gain.setValueAtTime(0.2, now);
-  osc2Gain.gain.exponentialRampToValueAtTime(0.001, now + duration * 0.5);
-  osc2.connect(osc2Gain);
-  osc2Gain.connect(highCut);
-
-  // Third harmonic (brightness)
-  const osc3 = ctx.createOscillator();
-  osc3.type = "triangle";
-  osc3.frequency.value = frequency * 3;
-  const osc3Gain = ctx.createGain();
-  osc3Gain.gain.setValueAtTime(0.08, now);
-  osc3Gain.gain.exponentialRampToValueAtTime(0.001, now + duration * 0.3);
-  osc3.connect(osc3Gain);
-  osc3Gain.connect(highCut);
-
-  // Attack transient (pick noise)
-  const noiseBuffer = ctx.createBuffer(1, ctx.sampleRate * 0.03, ctx.sampleRate);
-  const noiseData = noiseBuffer.getChannelData(0);
-  for (let i = 0; i < noiseData.length; i++) {
-    noiseData[i] = Math.random() * 2 - 1;
-  }
-  const noiseSource = ctx.createBufferSource();
-  noiseSource.buffer = noiseBuffer;
-  const noiseFilter = ctx.createBiquadFilter();
-  noiseFilter.type = "bandpass";
-  noiseFilter.frequency.value = frequency * 2;
-  noiseFilter.Q.value = 3;
-  const noiseGain = ctx.createGain();
-  noiseGain.gain.setValueAtTime(0.15, now);
-  noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
-  noiseSource.connect(noiseFilter);
-  noiseFilter.connect(noiseGain);
-  noiseGain.connect(masterGain);
-
-  osc1.start(now);
-  osc2.start(now);
-  osc3.start(now);
-  noiseSource.start(now);
-
-  osc1.stop(now + duration);
-  osc2.stop(now + duration);
-  osc3.stop(now + duration);
+  src.connect(gain);
+  gain.connect(chain);
+  src.start(t0);
 }
 
-export function playWebChord(notes: GuitarNote[], durationSeconds?: number): void {
-  const ctx = getWebAudioContext();
+export function playWebChord(notes: GuitarNote[]): void {
+  const ctx = getCtx();
   if (!ctx) return;
-
+  const inst     = currentInstrument;
   const playable = notes.filter((n) => n.fret !== "x");
-
+  // Strum: 13ms between strings (low to high)
   playable.forEach((note, i) => {
     const freq = getFretFrequency(note.string, note.fret);
-    if (freq > 0) {
-      // Slight strum delay between strings (arpeggio effect)
-      const delayMs = i * 18;
-      playWebNote(freq, delayMs / 1000, durationSeconds);
-    }
+    if (freq > 0) playWebNote(ctx, freq, note.string, i * 0.013, inst);
   });
 }
 
-// ─── Native Audio (iOS / Android) via expo-av ─────────────────────────────────
+export function preloadWebSamples(): void {
+  if (Platform.OS !== "web") return;
+  const ctx = getCtx();
+  if (!ctx) return;
+  // C major cross-string positions across all 6 strings
+  // Lower octave (A/D/G): sa re ga ma pa dha ni
+  // Middle octave (G/B/e): Sa Re Ga Ma Pa Dha Ni Sa'
+  const positions: [number, number][] = [
+    [4, 3],              // A  fret 3  = sa (C3)
+    [3, 0], [3, 2], [3, 3], [3, 5], // D open/2/3/5 = re ga ma pa
+    [2, 2], [2, 4],      // G  fret 2/4 = dha ni
+    [2, 5], [2, 7],      // G  fret 5/7 = Sa Re
+    [1, 5], [1, 6],      // B  fret 5/6 = Ga Ma
+    [0, 3], [0, 5], [0, 7], [0, 8], // e fret 3/5/7/8 = Pa Dha Ni Sa'
+  ];
+  positions.forEach(([si, fret]) => {
+    const freq = getFretFrequency(si, fret);
+    if (freq > 0) getBuffer(ctx, freq, si, "acoustic");
+  });
+}
+
+// ─── Native (iOS / Android) via expo-av ──────────────────────────────────────
 
 let audioSessionConfigured = false;
-
 async function ensureAudioSession(): Promise<void> {
   if (audioSessionConfigured) return;
   try {
@@ -158,178 +306,84 @@ async function ensureAudioSession(): Promise<void> {
   } catch {}
 }
 
-// Generate a simple pluck-like WAV tone as base64
-function generateWavBase64(frequency: number, durationMs: number = 1200): string {
-  const sampleRate = 22050;
-  const numSamples = Math.floor((sampleRate * durationMs) / 1000);
-  const numChannels = 1;
-  const bitsPerSample = 16;
-  const blockAlign = (numChannels * bitsPerSample) / 8;
-  const byteRate = sampleRate * blockAlign;
-  const dataSize = numSamples * blockAlign;
-  const fileSize = 44 + dataSize;
-
-  const buffer = new ArrayBuffer(fileSize);
-  const view = new DataView(buffer);
-
-  const writeString = (offset: number, str: string) => {
-    for (let i = 0; i < str.length; i++) {
-      view.setUint8(offset + i, str.charCodeAt(i));
-    }
+function pcmToWav(pcm: Float32Array, sr: number): string {
+  let peak = 0;
+  for (let i = 0; i < pcm.length; i++) peak = Math.max(peak, Math.abs(pcm[i]));
+  const norm = peak > 0 ? 0.85 / peak : 1;
+  const N    = pcm.length;
+  const size = 44 + N * 2;
+  const ab   = new ArrayBuffer(size);
+  const v    = new DataView(ab);
+  const ws   = (o: number, s: string) => {
+    for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i));
   };
-
-  writeString(0, "RIFF");
-  view.setUint32(4, fileSize - 8, true);
-  writeString(8, "WAVE");
-  writeString(12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, numChannels, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, byteRate, true);
-  view.setUint16(32, blockAlign, true);
-  view.setUint16(34, bitsPerSample, true);
-  writeString(36, "data");
-  view.setUint32(40, dataSize, true);
-
-  const omega = (2 * Math.PI * frequency) / sampleRate;
-
-  for (let i = 0; i < numSamples; i++) {
-    const t = i / sampleRate;
-    const decay = Math.exp(-t * 4.5);
-
-    // Plucked string waveform: fundamental + harmonics, fast attack decay
-    let sample =
-      decay *
-      (0.5 * Math.sin(omega * i) +
-        0.25 * Math.sin(2 * omega * i) +
-        0.12 * Math.sin(3 * omega * i) +
-        0.06 * Math.sin(4 * omega * i));
-
-    // Add tiny noise burst at start for pick attack
-    if (i < sampleRate * 0.015) {
-      const pickEnv = Math.exp((-i / sampleRate) * 300);
-      sample += pickEnv * (Math.random() * 0.1 - 0.05);
-    }
-
-    const pcm = Math.max(-1, Math.min(1, sample));
-    view.setInt16(44 + i * 2, pcm * 32767, true);
+  ws(0, "RIFF"); v.setUint32(4, size - 8, true); ws(8, "WAVE");
+  ws(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true); v.setUint32(24, sr, true);
+  v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true); ws(36, "data"); v.setUint32(40, N * 2, true);
+  for (let i = 0; i < N; i++) {
+    v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i] * norm)) * 32767, true);
   }
-
-  // Convert to base64
-  let binary = "";
-  const bytes = new Uint8Array(buffer);
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
+  let bin = "";
+  const bytes = new Uint8Array(ab);
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
 }
 
-const soundCache = new Map<string, Audio.Sound>();
-// Sounds currently ringing. Stopped before the next chord starts so notes
-// don't overlap when BPM is faster than the WAV's natural decay.
-const activeSounds = new Set<Audio.Sound>();
-// Timers that will pause sounds after the BPM-derived duration.
-const pendingStops = new Set<ReturnType<typeof setTimeout>>();
+const nativeCache = new Map<string, Audio.Sound>();
 
-function clearPendingStops(): void {
-  pendingStops.forEach((t) => clearTimeout(t));
-  pendingStops.clear();
-}
-
-async function silenceActiveSounds(): Promise<void> {
-  clearPendingStops();
-  const sounds = Array.from(activeSounds);
-  activeSounds.clear();
-  await Promise.all(
-    sounds.map((s) => s.pauseAsync().catch(() => {}))
-  );
-}
-
-async function playNativeNote(
-  stringIndex: number,
-  fret: number | "x" | "0",
-  durationSeconds: number
-): Promise<void> {
+async function playNativeNote(si: number, fret: number | "x" | "0"): Promise<void> {
   if (fret === "x") return;
-  const freq = getFretFrequency(stringIndex, fret);
+  const freq = getFretFrequency(si, fret);
   if (freq <= 0) return;
-
-  const cacheKey = `${stringIndex}_${fret}`;
-
+  const inst     = currentInstrument;
+  const cacheKey = `${inst}_${si}_${fret}`;
   try {
     await ensureAudioSession();
-
-    let sound = soundCache.get(cacheKey);
-
+    let sound = nativeCache.get(cacheKey);
     if (!sound) {
-      const wavB64 = generateWavBase64(freq, 1400);
-      const uri = `${FileSystem.cacheDirectory}guitar_${cacheKey}.wav`;
-
-      await FileSystem.writeAsStringAsync(uri, wavB64, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-
-      const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri },
-        { shouldPlay: false, volume: 0.7 }
-      );
-      soundCache.set(cacheKey, newSound);
-      sound = newSound;
+      const pcm = generatePCM(22050, freq, si, 3.0, inst);
+      const wav = pcmToWav(pcm, 22050);
+      const FileSystem = await import("expo-file-system/legacy");
+      const cacheDir = FileSystem.cacheDirectory ?? "";
+      const uri = `${cacheDir}${cacheKey}.wav`;
+      await FileSystem.writeAsStringAsync(uri, wav, { encoding: "base64" as any });
+      const { sound: s } = await Audio.Sound.createAsync({ uri }, { shouldPlay: false, volume: 0.9 });
+      nativeCache.set(cacheKey, s);
+      sound = s;
     }
-
     await sound.setPositionAsync(0);
     await sound.playAsync();
-
-    activeSounds.add(sound);
-    const stopTimer = setTimeout(() => {
-      pendingStops.delete(stopTimer);
-      activeSounds.delete(sound!);
-      sound!.pauseAsync().catch(() => {});
-    }, Math.max(80, durationSeconds * 1000));
-    pendingStops.add(stopTimer);
   } catch (err) {
-    // Silently fail - audio is optional enhancement
-    console.warn("Audio playback error:", err);
+    console.warn("Audio error:", err);
   }
 }
 
-export async function playNativeChord(
-  notes: GuitarNote[],
-  durationSeconds: number = 1.4
-): Promise<void> {
-  await silenceActiveSounds();
-
+export async function playNativeChord(notes: GuitarNote[]): Promise<void> {
   const playable = notes.filter((n) => n.fret !== "x");
   for (let i = 0; i < playable.length; i++) {
-    const note = playable[i];
-    // Small stagger for strum feel
-    if (i > 0) {
-      await new Promise((r) => setTimeout(r, 16));
-    }
-    playNativeNote(note.string, note.fret, durationSeconds);
+    if (i > 0) await new Promise<void>((r) => setTimeout(r, 13));
+    playNativeNote(playable[i].string, playable[i].fret);
   }
 }
 
-// ─── Unified API ──────────────────────────────────────────────────────────────
+// ─── Unified public API ───────────────────────────────────────────────────────
 
-export async function playChord(
-  notes: GuitarNote[],
-  durationSeconds?: number
-): Promise<void> {
+export async function playChord(notes: GuitarNote[]): Promise<void> {
   if (notes.length === 0) return;
   if (Platform.OS === "web") {
-    playWebChord(notes, durationSeconds);
+    playWebChord(notes);
   } else {
-    await playNativeChord(notes, durationSeconds);
+    await playNativeChord(notes);
   }
 }
 
 export function disposeAudio(): void {
-  clearPendingStops();
-  activeSounds.clear();
-  soundCache.forEach((sound) => {
-    sound.unloadAsync().catch(() => {});
-  });
-  soundCache.clear();
+  nativeCache.forEach((s) => s.unloadAsync().catch(() => {}));
+  nativeCache.clear();
+  webCache.clear();
+  acousticChain = null;
+  electricChain = null;
+  webCtx        = null;
 }

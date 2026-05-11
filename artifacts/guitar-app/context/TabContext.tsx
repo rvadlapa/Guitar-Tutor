@@ -7,8 +7,10 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { playChord } from "@/utils/audioEngine";
+import { playChord, setInstrument as _setInstrument, getInstrument, InstrumentType } from "@/utils/audioEngine";
 import { speakLabel, setVoiceEnabled as _setVoiceEnabled } from "@/utils/voiceEngine";
+
+export type { InstrumentType };
 
 export type GuitarNote = {
   string: number;
@@ -48,9 +50,11 @@ type TabContextType = {
   bpm: number;
   audioEnabled: boolean;
   voiceEnabled: boolean;
+  instrument: InstrumentType;
   setBpm: (bpm: number) => void;
   setAudioEnabled: (enabled: boolean) => void;
   setVoiceEnabled: (enabled: boolean) => void;
+  setInstrument: (inst: InstrumentType) => void;
   loadSong: (song: TabSong) => void;
   deleteSong: (id: string) => void;
   play: () => void;
@@ -74,8 +78,9 @@ export function TabProvider({ children }: { children: React.ReactNode }) {
   const [bpm, setBpmState] = useState(80);
   const [audioEnabled, setAudioEnabledState] = useState(true);
   const [voiceEnabled, setVoiceEnabledState] = useState(false);
+  const [instrument, setInstrumentState] = useState<InstrumentType>(getInstrument());
 
-  const playIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const playIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentSongRef = useRef<TabSong | null>(null);
   const currentChordIndexRef = useRef(0);
   const bpmRef = useRef(80);
@@ -144,7 +149,7 @@ export function TabProvider({ children }: { children: React.ReactNode }) {
 
   const stopPlayback = useCallback(() => {
     if (playIntervalRef.current) {
-      clearInterval(playIntervalRef.current);
+      clearTimeout(playIntervalRef.current);
       playIntervalRef.current = null;
     }
     setIsPlaying(false);
@@ -163,21 +168,29 @@ export function TabProvider({ children }: { children: React.ReactNode }) {
 
     setIsPlaying(true);
 
-    const tick = () => {
+    // Duration-aware scheduling: each chord fires after beatMs * chord.duration.
+    // This lets multi-note beats (duration < 1) subdivide within a single beat.
+    const scheduleNext = (fromIndex: number) => {
       const song = currentSongRef.current;
       if (!song) return;
       const chords = getAllChords(song);
-      const next = currentChordIndexRef.current + 1;
-      if (next >= chords.length) {
-        stopPlayback();
-        setCurrentChordIndex(0);
-      } else {
-        setCurrentChordIndex(next);
-      }
+      const chord = chords[fromIndex];
+      const beatMs = (60 / bpmRef.current) * 1000;
+      const delay = beatMs * (chord?.duration ?? 1);
+
+      playIntervalRef.current = setTimeout(() => {
+        const next = fromIndex + 1;
+        if (next >= chords.length) {
+          stopPlayback();
+          setCurrentChordIndex(0);
+        } else {
+          setCurrentChordIndex(next);
+          scheduleNext(next);
+        }
+      }, delay);
     };
 
-    const interval = (60 / bpmRef.current) * 1000;
-    playIntervalRef.current = setInterval(tick, interval);
+    scheduleNext(currentChordIndexRef.current);
   }, [stopPlayback]);
 
   const pause = useCallback(() => {
@@ -223,6 +236,11 @@ export function TabProvider({ children }: { children: React.ReactNode }) {
     _setVoiceEnabled(enabled);
   }, []);
 
+  const setInstrument = useCallback((inst: InstrumentType) => {
+    _setInstrument(inst);
+    setInstrumentState(inst);
+  }, []);
+
   return (
     <TabContext.Provider
       value={{
@@ -233,9 +251,11 @@ export function TabProvider({ children }: { children: React.ReactNode }) {
         bpm,
         audioEnabled,
         voiceEnabled,
+        instrument,
         setBpm,
         setAudioEnabled,
         setVoiceEnabled,
+        setInstrument,
         loadSong,
         deleteSong,
         play,

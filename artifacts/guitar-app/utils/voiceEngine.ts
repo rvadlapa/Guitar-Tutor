@@ -22,30 +22,83 @@ if (Platform.OS !== "web") {
   getSpeech();
 }
 
-// Full syllable pronunciations — clearer than single letters
+// Cache the chosen native voice identifier so we don't re-query every note
+let nativeVoiceId: string | undefined = undefined;
+let nativeVoiceResolved = false;
+
+async function getFemaleNativeVoice(): Promise<string | undefined> {
+  if (nativeVoiceResolved) return nativeVoiceId;
+  nativeVoiceResolved = true;
+  try {
+    const s = await getSpeech();
+    if (!s) return undefined;
+    const voices = await s.getAvailableVoicesAsync();
+    // Priority: en-IN female → hi female → en female → any female
+    const priorities = [
+      (v: { language: string; name: string; identifier: string }) =>
+        v.language.startsWith("en-IN") && /female|woman/i.test(v.name),
+      (v: { language: string; name: string; identifier: string }) =>
+        v.language.startsWith("hi") && /female|woman/i.test(v.name),
+      (v: { language: string; name: string; identifier: string }) =>
+        v.language.startsWith("en-IN"),
+      (v: { language: string; name: string; identifier: string }) =>
+        v.language.startsWith("hi"),
+      (v: { language: string; name: string; identifier: string }) =>
+        /female|woman|samantha|victoria|moira|karen|tessa|veena/i.test(v.name),
+    ];
+    for (const test of priorities) {
+      const match = voices.find(test);
+      if (match) {
+        nativeVoiceId = match.identifier;
+        return nativeVoiceId;
+      }
+    }
+  } catch {}
+  return undefined;
+}
+
+// Phonetic spellings that TTS engines say as words, not letter-by-letter
 const SYLLABLE_PRONUNCIATIONS: Record<string, string> = {
-  Sa: "Saa",
-  sa: "saa",
-  Re: "Ray",
-  re: "ray",
+  Sa: "Saah",
+  sa: "saah",
+  Re: "Reh",
+  re: "reh",
   Ri: "Ree",
   ri: "ree",
-  Ga: "Ga",
-  ga: "ga",
-  Ma: "Ma",
-  ma: "ma",
-  Pa: "Pa",
-  pa: "pa",
-  Dha: "Dha",
-  dha: "dha",
-  Da: "Da",
-  da: "da",
+  Ga: "Gaah",
+  ga: "gaah",
+  Ma: "Maah",
+  ma: "maah",
+  Pa: "Paah",
+  pa: "paah",
+  Dha: "Daah",
+  dha: "daah",
+  Da: "Daah",
+  da: "daah",
   Ni: "Nee",
   ni: "nee",
 };
 
 function getPronunciation(label: string): string {
   return SYLLABLE_PRONUNCIATIONS[label] ?? label;
+}
+
+// Pick the best female voice from available web voices
+function pickWebFemaleVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | undefined {
+  const priorities: ((v: SpeechSynthesisVoice) => boolean)[] = [
+    (v) => v.lang.startsWith("en-IN") && /female|woman/i.test(v.name),
+    (v) => v.lang.startsWith("hi") && /female|woman/i.test(v.name),
+    (v) => v.lang.startsWith("en-IN"),
+    (v) => v.lang.startsWith("hi"),
+    (v) => /female|woman|samantha|victoria|moira|karen|tessa|veena/i.test(v.name),
+    (v) => /google.*english/i.test(v.name),
+    (v) => v.lang.startsWith("en"),
+  ];
+  for (const test of priorities) {
+    const match = voices.find(test);
+    if (match) return match;
+  }
+  return voices[0];
 }
 
 export function setVoiceEnabled(enabled: boolean): void {
@@ -77,38 +130,44 @@ export async function speakLabel(label: string | undefined): Promise<void> {
   if (Platform.OS === "web") {
     if (typeof window === "undefined" || !window.speechSynthesis) return;
 
-    // Cancel any in-progress utterance first (fast tempo)
     window.speechSynthesis.cancel();
 
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.4;   // slightly faster for musical pacing
-    utterance.pitch = 1.1;
+    // Classical Indian female singer feel: high pitch, slow deliberate pace
+    utterance.rate = 0.78;
+    utterance.pitch = 1.45;
     utterance.volume = 1.0;
 
-    // Prefer an Indian English or English voice if available
     const voices = window.speechSynthesis.getVoices();
-    const preferred = voices.find(
-      (v) =>
-        v.lang.startsWith("en-IN") ||
-        v.lang.startsWith("hi") ||
-        v.lang.startsWith("en")
-    );
-    if (preferred) utterance.voice = preferred;
+    if (voices.length > 0) {
+      const voice = pickWebFemaleVoice(voices);
+      if (voice) utterance.voice = voice;
+    } else {
+      // Voices not loaded yet — listen once then speak
+      window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.onvoiceschanged = null;
+        const v2 = window.speechSynthesis.getVoices();
+        const chosen = pickWebFemaleVoice(v2);
+        if (chosen) utterance.voice = chosen;
+        window.speechSynthesis.speak(utterance);
+      };
+      return;
+    }
 
     window.speechSynthesis.speak(utterance);
   } else {
     const s = await getSpeech();
     if (!s) return;
 
-    // Stop previous utterance before starting next
-    try {
-      s.stop();
-    } catch (_) {}
+    try { s.stop(); } catch (_) {}
+
+    const voiceId = await getFemaleNativeVoice();
 
     s.speak(text, {
-      rate: 0.9,
-      pitch: 1.1,
+      rate: 0.78,
+      pitch: 1.45,
       language: "en-IN",
+      ...(voiceId ? { voice: voiceId } : {}),
     });
   }
 }
