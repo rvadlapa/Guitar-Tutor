@@ -237,8 +237,26 @@ function getBuffer(ctx: AudioContext, freq: number, si: number, inst: Instrument
   return ab;
 }
 
+// Active web sources from the most recent chord. Stopped before the next
+// chord starts so notes don't ring past the current beat.
+const activeWebSources = new Set<{ src: AudioBufferSourceNode; gain: GainNode }>();
+
+function silenceActiveWebSources(ctx: AudioContext): void {
+  const now = ctx.currentTime;
+  activeWebSources.forEach(({ src, gain }) => {
+    try {
+      gain.gain.cancelScheduledValues(now);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.linearRampToValueAtTime(0, now + 0.02);
+      src.stop(now + 0.025);
+    } catch {}
+  });
+  activeWebSources.clear();
+}
+
 function playWebNote(
   ctx: AudioContext, freq: number, si: number, delaySeconds: number, inst: InstrumentType,
+  durationSeconds: number,
 ): void {
   const t0    = ctx.currentTime + delaySeconds;
   const chain = getChain(ctx, inst);
@@ -248,24 +266,36 @@ function playWebNote(
 
   const gain = ctx.createGain();
   // Bass strings slightly louder; electric a touch hotter
-  gain.gain.value = inst === "electric"
-    ? 0.58 + si * 0.038
-    : 0.52 + si * 0.040;
+  const peak = inst === "electric" ? 0.58 + si * 0.038 : 0.52 + si * 0.040;
+  gain.gain.setValueAtTime(peak, t0);
+  // Fade out by the end of the beat so the buffer doesn't ring into the next note
+  const fadeStart = t0 + Math.max(0.05, durationSeconds * 0.85);
+  const fadeEnd   = t0 + durationSeconds;
+  gain.gain.setValueAtTime(peak, fadeStart);
+  gain.gain.linearRampToValueAtTime(0.0001, fadeEnd);
 
   src.connect(gain);
   gain.connect(chain);
   src.start(t0);
+  src.stop(fadeEnd + 0.02);
+
+  const handle = { src, gain };
+  activeWebSources.add(handle);
+  src.onended = () => {
+    activeWebSources.delete(handle);
+  };
 }
 
-export function playWebChord(notes: GuitarNote[]): void {
+export function playWebChord(notes: GuitarNote[], durationSeconds: number = 1.6): void {
   const ctx = getCtx();
   if (!ctx) return;
+  silenceActiveWebSources(ctx);
   const inst     = currentInstrument;
   const playable = notes.filter((n) => n.fret !== "x");
   // Strum: 13ms between strings (low to high)
   playable.forEach((note, i) => {
     const freq = getFretFrequency(note.string, note.fret);
-    if (freq > 0) playWebNote(ctx, freq, note.string, i * 0.013, inst);
+    if (freq > 0) playWebNote(ctx, freq, note.string, i * 0.013, inst, durationSeconds);
   });
 }
 
@@ -332,8 +362,26 @@ function pcmToWav(pcm: Float32Array, sr: number): string {
 }
 
 const nativeCache = new Map<string, Audio.Sound>();
+const activeNativeSounds = new Set<Audio.Sound>();
+const pendingNativeStops = new Set<ReturnType<typeof setTimeout>>();
 
-async function playNativeNote(si: number, fret: number | "x" | "0"): Promise<void> {
+function clearPendingNativeStops(): void {
+  pendingNativeStops.forEach((t) => clearTimeout(t));
+  pendingNativeStops.clear();
+}
+
+async function silenceActiveNativeSounds(): Promise<void> {
+  clearPendingNativeStops();
+  const sounds = Array.from(activeNativeSounds);
+  activeNativeSounds.clear();
+  await Promise.all(sounds.map((s) => s.pauseAsync().catch(() => {})));
+}
+
+async function playNativeNote(
+  si: number,
+  fret: number | "x" | "0",
+  durationSeconds: number,
+): Promise<void> {
   if (fret === "x") return;
   const freq = getFretFrequency(si, fret);
   if (freq <= 0) return;
@@ -355,31 +403,48 @@ async function playNativeNote(si: number, fret: number | "x" | "0"): Promise<voi
     }
     await sound.setPositionAsync(0);
     await sound.playAsync();
+    activeNativeSounds.add(sound);
+    const stopTimer = setTimeout(() => {
+      pendingNativeStops.delete(stopTimer);
+      activeNativeSounds.delete(sound!);
+      sound!.pauseAsync().catch(() => {});
+    }, Math.max(80, durationSeconds * 1000));
+    pendingNativeStops.add(stopTimer);
   } catch (err) {
     console.warn("Audio error:", err);
   }
 }
 
-export async function playNativeChord(notes: GuitarNote[]): Promise<void> {
+export async function playNativeChord(
+  notes: GuitarNote[],
+  durationSeconds: number = 1.4,
+): Promise<void> {
+  await silenceActiveNativeSounds();
   const playable = notes.filter((n) => n.fret !== "x");
   for (let i = 0; i < playable.length; i++) {
     if (i > 0) await new Promise<void>((r) => setTimeout(r, 13));
-    playNativeNote(playable[i].string, playable[i].fret);
+    playNativeNote(playable[i].string, playable[i].fret, durationSeconds);
   }
 }
 
 // ─── Unified public API ───────────────────────────────────────────────────────
 
-export async function playChord(notes: GuitarNote[]): Promise<void> {
+export async function playChord(
+  notes: GuitarNote[],
+  durationSeconds?: number,
+): Promise<void> {
   if (notes.length === 0) return;
   if (Platform.OS === "web") {
-    playWebChord(notes);
+    playWebChord(notes, durationSeconds);
   } else {
-    await playNativeChord(notes);
+    await playNativeChord(notes, durationSeconds);
   }
 }
 
 export function disposeAudio(): void {
+  clearPendingNativeStops();
+  activeNativeSounds.clear();
+  activeWebSources.clear();
   nativeCache.forEach((s) => s.unloadAsync().catch(() => {}));
   nativeCache.clear();
   webCache.clear();
